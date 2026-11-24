@@ -60,45 +60,6 @@ Item {
     }
 
     // ---- a bordered one-line field with a caption -------------------------------------------------
-    component Field: Rectangle {
-        id: f
-        property string label
-        property bool secret: false
-        property alias text: input.text
-        property alias input: input
-        signal accepted()
-        onActiveFocusChanged: if (activeFocus) input.forceActiveFocus()     // Tab lands on the frame: type in the box
-        height: 30
-        color: "transparent"
-        border.width: 1
-        border.color: Theme.ink
-
-        Text {
-            id: cap
-            x: 10
-            anchors.verticalCenter: parent.verticalCenter
-            width: 84
-            text: f.label
-            color: Theme.inkSoft
-            font.family: Theme.font
-            font.pixelSize: Theme.smallFontSize
-            font.letterSpacing: 2
-        }
-        TextInput {
-            id: input
-            x: 100
-            width: parent.width - 112
-            anchors.verticalCenter: parent.verticalCenter
-            color: Theme.ink
-            selectionColor: Theme.ink
-            selectedTextColor: Theme.paper
-            echoMode: f.secret ? TextInput.Password : TextInput.Normal
-            font.family: Theme.font
-            font.pixelSize: Theme.fontSize
-            clip: true
-            onAccepted: f.accepted()
-        }
-    }
 
     // =============================================================== inbox
     Item {
@@ -367,9 +328,9 @@ Item {
                     + "  2. Turn on 2-Step Verification (if it is off).\n"
                     + "  3. Search for \"App passwords\" and create one named ProjectNier.\n"
                     + "  4. Paste the 16 letters below.\n\n"
-                    + "It is checked with Google, then kept in ~/.config/projectnier/mail.json (readable only by you)."
+                    + "It is checked with Google, then kept in your keyring (KeePassXC) if one is running, else in ~/.config/projectnier/mail.json (readable only by you)."
             }
-            Field {
+            FormField {
                 id: addrField
                 label: "ADDRESS"
                 y: setupText.height + 18
@@ -378,7 +339,7 @@ Item {
                 KeyNavigation.tab: passField
                 onAccepted: passField.input.forceActiveFocus()
             }
-            Field {
+            FormField {
                 id: passField
                 label: "APP PASSWORD"
                 secret: true
@@ -527,14 +488,14 @@ Item {
             width: parent.width
             height: parent.height - y
 
-            Field {
+            FormField {
                 id: toField
                 label: "TO"
                 width: parent.width
                 KeyNavigation.tab: subjectField
                 onAccepted: subjectField.input.forceActiveFocus()
             }
-            Field {
+            FormField {
                 id: subjectField
                 label: "SUBJECT"
                 y: toField.height + 8

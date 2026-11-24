@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 
 // Facebook Messenger (through the local Matrix bridge) in the screen's style.
@@ -419,5 +420,78 @@ Item {
             }
         }
         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.lightbox = "" }
+    }
+
+    // =============================================================== first run: set up
+    // No Messenger login yet (no ~/.config/fbtui/session.json): set up the local Matrix server and the Facebook bridge
+    // (scripts/messenger-setup.py), then the chat with the bridge bot opens: send it "login" there.
+    Rectangle {
+        id: setup
+        anchors.fill: parent
+        visible: !root.client.hasLogin && root.client.status === "NO LOGIN FOUND"
+        color: Theme.paper
+        MouseArea { anchors.fill: parent }          // nothing under it takes clicks
+
+        Column {
+            width: Math.min(parent.width - 40, 640)
+            x: 20
+            y: 20
+            spacing: 12
+
+            Text {
+                width: parent.width
+                text: "SET UP MESSENGER"
+                color: Theme.ink
+                font.family: Theme.font
+                font.pixelSize: Theme.fontSize + 2
+                font.bold: true
+                font.letterSpacing: 3
+            }
+            Text {
+                width: parent.width
+                wrapMode: Text.Wrap
+                lineHeight: 1.35
+                color: Theme.ink
+                font.family: Theme.font
+                font.pixelSize: Theme.fontSize
+                text: "Messenger runs through a small Matrix server and a Facebook bridge on this computer (Docker). "
+                    + "Nothing is reachable from outside it.\n\n"
+                    + "  1. Pick a user name and password for that local server (they never leave this computer).\n"
+                    + "  2. SET UP starts the server and the bridge (the first time downloads them, a few minutes).\n"
+                    + "  3. The chat with the bridge bot opens: send  login  and follow its steps to connect Facebook."
+            }
+            FormField {
+                id: userField
+                label: "USER NAME"
+                width: Math.min(parent.width, 520)
+                text: Quickshell.env("USER") || ""
+                KeyNavigation.tab: passField
+                onAccepted: passField.input.forceActiveFocus()
+            }
+            FormField {
+                id: passField
+                label: "PASSWORD"
+                secret: true
+                width: userField.width
+                KeyNavigation.tab: userField
+                onAccepted: goBtn.clicked()
+            }
+            ChipButton {
+                id: goBtn
+                text: root.client.settingUp ? "SETTING UP…" : "SET UP"
+                enabledLook: !root.client.settingUp
+                onClicked: if (enabledLook) root.client.runSetup(userField.text, passField.text)
+            }
+            Text {
+                width: parent.width
+                visible: root.client.settingUp || root.client.setupError !== ""
+                wrapMode: Text.Wrap
+                text: root.client.setupError !== "" ? root.client.setupError.toUpperCase() : root.client.setupStep.toUpperCase() + "…"
+                color: root.client.setupError !== "" ? Theme.accent : Theme.inkSoft
+                font.family: Theme.font
+                font.pixelSize: Theme.smallFontSize
+                font.letterSpacing: 1
+            }
+        }
     }
 }

@@ -21,10 +21,11 @@ Scope {
     // ---- Messenger: not CONNECTED since when (0 = connected) ----
     property double msgBadSince: 0
     function trackMsg() {
-        if (!matrix || matrix.status === "CONNECTED") msgBadSince = 0
+        // not set up (no Messenger login) is not broken: nothing to watch
+        if (!matrix || !matrix.hasLogin || matrix.status === "CONNECTED") msgBadSince = 0
         else if (msgBadSince === 0) msgBadSince = Date.now()
     }
-    Connections { target: h.matrix; function onStatusChanged() { h.trackMsg() } }
+    Connections { target: h.matrix; function onStatusChanged() { h.trackMsg() } function onHasLoginChanged() { h.trackMsg() } }
 
     // ---- mail (only when a login is saved) ----
     property double mailBadSince: 0
@@ -65,7 +66,7 @@ Scope {
             }
         }
     }
-    Timer { interval: 60000; running: true; repeat: true; triggeredOnStart: true; onTriggered: dockerCheck.running = true }
+    Timer { interval: 60000; running: true; repeat: true; triggeredOnStart: true; onTriggered: if (h.matrix && h.matrix.hasLogin) dockerCheck.running = true }
 
     // the grace periods are measured against this clock
     property double now: Date.now()
@@ -76,9 +77,9 @@ Scope {
         var ms = matrix ? matrix.status : ""
         if (ms === "LOGIN EXPIRED") p.push("MESSENGER LOGIN EXPIRED")
         else if (msgBadSince > 0 && t - msgBadSince >= messengerGrace) p.push("MESSENGER " + (ms === "CONNECTING" || ms === "" ? "OFFLINE" : ms))
-        var down = containers.filter(c => (downCount[c] || 0) >= 2)
+        var down = matrix && matrix.hasLogin ? containers.filter(c => (downCount[c] || 0) >= 2) : []   // no Messenger: no bridge to watch
         if (down.length > 0) p.push("BRIDGE DOWN")
-        else if (fbLoggedOut) p.push("FACEBOOK LOGGED OUT")
+        else if (matrix && matrix.hasLogin && fbLoggedOut) p.push("FACEBOOK LOGGED OUT")
         else if (fbBadSince > 0 && t - fbBadSince >= fbGrace) p.push("FACEBOOK DISCONNECTED")
         if (mailBadSince > 0 && t - mailBadSince >= mailGrace && mailBad()) p.push("MAIL " + mail.status)
         return p

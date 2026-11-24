@@ -27,12 +27,16 @@ Item {
     property var byId: ({})
     property var members: ({})        // roomId -> { userId: displayName }
     property bool running: false
+    // a login exists (session.json): Messenger is set up. Without one the health light leaves Messenger and the
+    // bridge alone, and the Messenger window offers SET UP MESSENGER (scripts/messenger-setup.py)
+    property bool hasLogin: false
     property int txn: 0
 
     FileView {
         id: sessionFile
         path: Quickshell.env("HOME") + "/.config/fbtui/session.json"
         blockLoading: true
+        printErrors: false                  // no file = Messenger not set up yet (status NO LOGIN FOUND), not an error
         watchChanges: true
         // a new login was saved (after LOGIN EXPIRED): connect again with it
         onFileChanged: {
@@ -73,9 +77,11 @@ Item {
             token = s.access_token
             me = s.user_id
         } catch (e) {
+            hasLogin = false
             status = "NO LOGIN FOUND"
             return
         }
+        hasLogin = true
         running = true
         status = "CONNECTING"
         firstSync()
@@ -242,11 +248,54 @@ Item {
     // the bridge's own chat is hidden, except while Facebook has logged the bridge out (Health.qml): send it "login" there
     property bool showBridge: false
     onShowBridgeChanged: rebuild()
+    // just set up: the bridge chat stays in the list until Facebook is connected (NierScreen clears it)
+    property bool setupPending: false
+    onSetupPendingChanged: rebuild()
+
+    // ---- first-time setup (Messenger window → SET UP MESSENGER; scripts/messenger-setup.py) ----
+    property bool settingUp: false
+    property string setupStep: ""
+    property string setupError: ""
+    function runSetup(username, password) {
+        if (settingUp) return
+        settingUp = true
+        setupError = ""
+        setupStep = "Starting"
+        var p = setupComp.createObject(root, { environment: ({ SETUP_PAYLOAD: JSON.stringify({ username: username, password: password }) }) })
+        p.running = true
+    }
+    function setupLine(line) {
+        var d = null
+        try { d = JSON.parse(line) } catch (e) { return }
+        if (d.step) setupStep = d.step
+        else if (d.error) { setupError = d.error; settingUp = false }
+        else if (d.ok) {
+            settingUp = false
+            setupStep = ""
+            setupPending = true
+            sessionFile.reload()
+            start()
+            open(d.bot_room)                  // send "login" there to connect Facebook
+            if (currentName === "") currentName = "Facebook bridge"     // the room list has not loaded yet
+        }
+    }
+    Component {
+        id: setupComp
+        Process {
+            id: sp
+            command: ["python3", "-I", Quickshell.shellPath("scripts/messenger-setup.py")]
+            stdout: SplitParser { onRead: line => root.setupLine(line) }
+            onExited: code => {
+                if (root.settingUp) { root.settingUp = false; if (root.setupError === "") root.setupError = "the setup stopped unexpectedly (exit " + code + ")" }
+                sp.destroy(100)
+            }
+        }
+    }
     function rebuild() {
         var out = []
         for (var id in byId) {
             var r = byId[id]
-            if (!showBridge && /bridge/i.test(r.name)) continue          // the bridge's own management chats
+            if (!showBridge && !setupPending && /bridge/i.test(r.name)) continue          // the bridge's own management chats
             out.push(r)
         }
         out.sort(function (a, b) {

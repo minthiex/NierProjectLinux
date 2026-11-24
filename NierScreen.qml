@@ -169,6 +169,7 @@ Item {
         mail: root.mailClient
         // Facebook logged the bridge out: show the bridge chat in Messenger so "login" can be sent to it
         onFbLoggedOutChanged: matrix.showBridge = fbLoggedOut
+        onFbStateChanged: if (fbState === "CONNECTED") matrix.setupPending = false     // set up and logged in: hide the bot chat again
         onBroke: summary => Quickshell.execDetached(["notify-send", "-a", "System", "-i", "dialog-warning",
             "Something needs attention", root.markupSafe(summary) + ". Open System → Self Check (or click the mark at the top right) to repair."])
     }
