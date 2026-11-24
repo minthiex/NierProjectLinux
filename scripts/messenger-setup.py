@@ -27,7 +27,8 @@ from pathlib import Path
 HOME = Path.home()
 BRIDGE = Path(os.environ.get("PROJECTNIER_BRIDGE_DIR") or HOME / ".local/share/fbtui-src/bridge")
 SESSION = HOME / ".config/fbtui/session.json"
-HS = "http://127.0.0.1:8008"          # never "localhost": it resolves to ::1 first, Synapse listens on IPv4
+# never "localhost": it resolves to ::1 first, Synapse listens on IPv4. Another address only for tests (a second bridge)
+HS = os.environ.get("PROJECTNIER_MATRIX_URL", "http://127.0.0.1:8008").rstrip("/")
 SYNAPSE_IMG = "matrixdotorg/synapse:latest"
 META_IMG = "dock.mau.dev/mautrix/meta:latest"
 DOMAIN = "localhost"
@@ -220,7 +221,7 @@ def main():
     tmp = SESSION.with_name(SESSION.name + ".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
-        json.dump({"homeserver": "http://localhost:8008", "user_id": me, "device_id": r.get("device_id", ""),
+        json.dump({"homeserver": HS.replace("://127.0.0.1", "://localhost"), "user_id": me, "device_id": r.get("device_id", ""),
                    "access_token": token}, fh)
     os.replace(tmp, SESSION)
     say(ok=True, user_id=me, bot=bot, bot_room=room)
