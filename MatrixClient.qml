@@ -239,11 +239,14 @@ Item {
     }
     Timer { id: retry; interval: 5000; onTriggered: { if (root.running) { if (root.since === "") root.firstSync(); else root.poll() } } }
 
+    // the bridge's own chat is hidden, except while Facebook has logged the bridge out (Health.qml): send it "login" there
+    property bool showBridge: false
+    onShowBridgeChanged: rebuild()
     function rebuild() {
         var out = []
         for (var id in byId) {
             var r = byId[id]
-            if (/bridge/i.test(r.name)) continue          // the bridge's own management chats
+            if (!showBridge && /bridge/i.test(r.name)) continue          // the bridge's own management chats
             out.push(r)
         }
         out.sort(function (a, b) {

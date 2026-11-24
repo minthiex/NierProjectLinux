@@ -164,6 +164,8 @@ Item {
         id: health
         matrix: root.matrixClient
         mail: root.mailClient
+        // Facebook logged the bridge out: show the bridge chat in Messenger so "login" can be sent to it
+        onFbLoggedOutChanged: matrix.showBridge = fbLoggedOut
         onBroke: summary => Quickshell.execDetached(["notify-send", "-a", "System", "-i", "dialog-warning",
             "Something needs attention", root.markupSafe(summary) + ". Open System → Self Check (or click the mark at the top right) to repair."])
     }
@@ -1073,7 +1075,8 @@ Item {
             anchors.right: parent.right
             anchors.top: parent.bottom
             anchors.topMargin: 8
-            text: markHit.containsMouse ? (health.ok ? "Self Check" : health.problems.join("  ·  ") + "  ·  click to repair") : ""
+            text: markHit.containsMouse ? (health.ok ? "Self Check"
+                                   : health.problems.join("  ·  ") + (health.fbLoggedOut ? "  ·  log in again: Messages → bridge chat → send login" : "  ·  click to repair")) : ""
         }
     }
 
