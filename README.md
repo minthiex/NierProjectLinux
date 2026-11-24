@@ -86,3 +86,7 @@ accounts), the bridge's data (`~/.local/share/projectnier/messenger-bridge/synap
 ## Updating
 
 `git pull` in `~/dotfiles`. The shell reloads by itself; for Hyprland run `hyprctl reload`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
