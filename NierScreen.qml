@@ -401,6 +401,21 @@ Item {
             }
         }
     }
+    // a window an app opened on its own next to the one in its frame: floating, centred, focused, never placed or hidden
+    function showOwnWindow(addr) {
+        var k = Object.assign({}, known); k[addr] = true; known = k
+        var ws = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
+        var sl = 'window = "address:0x' + addr + '"'
+        var w = Math.round(Math.min(1000, width * 0.6)), h = Math.round(Math.min(760, height * 0.75))
+        Quickshell.execDetached(["hyprctl", "--batch", [
+            'dispatch hl.dsp.window.move({ workspace = "' + ws + '", follow = false, ' + sl + ' })',
+            'dispatch hl.dsp.window.float({ ' + sl + ', action = "enable" })',
+            'dispatch hl.dsp.window.resize({ ' + sl + ', x = ' + w + ', y = ' + h + ' })',
+            'dispatch hl.dsp.window.center({ ' + sl + ' })',
+            'dispatch hl.dsp.focus({ ' + sl + ' })'].join(" ; ")])
+        releaseKeys()               // the keys go to the window, not the screen
+    }
+
     // the sub-function a window class belongs to ("" = none known)
     // title of a window (a registered app with a generic class like "Tk" is told apart by it)
     function titleOf(addr) { var t = pop.toplevelOf(String(addr).replace(/^0x/, "").toLowerCase()); return t ? String(t.title) : "" }
@@ -434,7 +449,7 @@ Item {
         var click = claim !== null && claim.slug === curSlug     // started from the page you are on: stay there
         // an app that is already open does not get a second window (starting Firefox again opens one): drop the new
         // window and bring the existing one forward instead
-        var d = dupComp.createObject(root, { addr: addr, cls: cls, slug: slug, click: click, command: ["sh", "-c",
+        var d = dupComp.createObject(root, { addr: addr, cls: cls, slug: slug, click: click, launched: claim !== null, command: ["sh", "-c",
             "hyprctl clients -j | jq -r --arg c \"$1\" --arg a \"0x$2\" '([.[] | select(.address == $a)][0].floating // false) as $f | ([.[] | select(.class == $c and .address != $a)][0].address // \"\") as $o | \"\\($f)\\t\\($o)\"'", "sh", cls, addr] })
         d.running = true
         d.destroy(15000)
@@ -447,11 +462,19 @@ Item {
             property string cls
             property string slug
             property bool click: false
+            property bool launched: false     // started from a button (a claim was waiting for it)
             stdout: StdioCollector {
                 onStreamFinished: {
                     var parts = text.trim().split("\t")
                     var other = (parts[1] || "").replace(/^0x/, "")
                     if (other === "") { root.placeWindow(dp.addr, dp.cls, dp.slug, false, dp.click); return }
+                    if (!dp.launched && parts[0] !== "true" && dp.slug !== root.viewerSlug) {
+                        // the app opened a second window by itself (a website's sign-in popup in Firefox, a "new window"):
+                        // nobody launched it again, so it is not a duplicate to drop. Show it floating and centred
+                        // over everything, like a dialog, and leave it alone afterwards.
+                        root.showOwnWindow(dp.addr)
+                        return
+                    }
                     if (parts[0] === "true") {
                         // a dialog of an app that is already open (file picker, "Open database" ...): show it, centred
                         var ws = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
