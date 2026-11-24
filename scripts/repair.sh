@@ -19,7 +19,7 @@ elif ! docker info >/dev/null 2>&1; then
 else
   for c in fbtui-synapse fbtui-meta; do
     st=$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null)
-    if [ -z "$st" ]; then r "$c" "missing: rebuild it from ~/.local/share/fbtui-src/bridge/"
+    if [ -z "$st" ]; then r "$c" "missing: rebuild it with SET UP MESSENGER (bridge: $(bridge_dir))"
     elif [ "$st" != running ]; then
       if docker start "$c" >/dev/null 2>&1; then r "$c" "was $st: started"; else r "$c" "was $st: could not start"; fi
       did=1

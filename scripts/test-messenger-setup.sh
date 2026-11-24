@@ -9,7 +9,8 @@
 # real containers (2026-11-24).
 set -euo pipefail
 export COMPOSE_PROJECT_NAME=nier-messenger-test
-REAL="$HOME/.local/share/fbtui-src/bridge"
+. "$(dirname "$(readlink -f "$0")")/lib.sh"
+REAL=$(bridge_dir)
 SETUP="$(dirname "$(readlink -f "$0")")/messenger-setup.py"
 PORT=18008
 W=$(mktemp -d "${TMPDIR:-/tmp}/nier-messenger-test.XXXXXX")

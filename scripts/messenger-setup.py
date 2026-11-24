@@ -2,7 +2,8 @@
 """usage: messenger-setup.py      JSON in $SETUP_PAYLOAD: {"username": "...", "password": "...", "replace": false}
 Sets up the Messenger of the NieR screen (Messenger.qml → SET UP MESSENGER), replacing what fbtui's setup did:
   1. the bridge recipe (docker-compose.yml + patch_configs.py) in $PROJECTNIER_BRIDGE_DIR
-     (default ~/.local/share/fbtui-src/bridge): configs and the bridge registration are generated only if missing
+     (else ~/.local/share/fbtui-src/bridge if it exists, else ~/.local/share/projectnier/messenger-bridge, where the
+     dotfiles' install.sh puts it): configs and the bridge registration are generated only if missing
   2. the containers are started (docker compose up -d) and Synapse is waited for
   3. the Matrix account is created through Synapse's shared-secret registration (an existing one is fine), then
      logged in: the token goes to ~/.config/fbtui/session.json (mode 600). An existing login is never replaced
@@ -25,7 +26,14 @@ import urllib.request
 from pathlib import Path
 
 HOME = Path.home()
-BRIDGE = Path(os.environ.get("PROJECTNIER_BRIDGE_DIR") or HOME / ".local/share/fbtui-src/bridge")
+def _bridge_dir():
+    if os.environ.get("PROJECTNIER_BRIDGE_DIR"):
+        return Path(os.environ["PROJECTNIER_BRIDGE_DIR"])
+    legacy = HOME / ".local/share/fbtui-src/bridge"           # the original fbtui setup
+    return legacy if (legacy / "docker-compose.yml").exists() else HOME / ".local/share/projectnier/messenger-bridge"
+
+
+BRIDGE = _bridge_dir()
 SESSION = HOME / ".config/fbtui/session.json"
 # never "localhost": it resolves to ::1 first, Synapse listens on IPv4. Another address only for tests (a second bridge)
 HS = os.environ.get("PROJECTNIER_MATRIX_URL", "http://127.0.0.1:8008").rstrip("/")
