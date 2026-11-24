@@ -332,6 +332,11 @@ Item {
     }
     // every image, from wherever it was opened (a list, the file manager ...), is shown in this sub-function
     readonly property string viewerSlug: slugOf("Entertainment/Image Viewer")
+    // video players: a second video never replaces or hides the one that is playing (see dupComp)
+    readonly property string videoSlug: slugOf("Entertainment/Video Player")
+    function isVideo(cls, slug) {
+        return slug === videoSlug || /^(mpv|vlc|io\.github\.celluloid_player\.celluloid|celluloid|org\.kde\.haruna|haruna|totem|org\.gnome\.totem|smplayer)$/i.test(String(cls))
+    }
     function isViewer(cls) { return String(cls).toLowerCase().indexOf("gwenview") >= 0 }
     function windowOpened(addr, cls) {
         if (known[addr]) return
@@ -470,6 +475,13 @@ Item {
                     var parts = text.trim().split("\t")
                     var other = (parts[1] || "").replace(/^0x/, "")
                     if (other === "") { root.placeWindow(dp.addr, dp.cls, dp.slug, false, dp.click); return }
+                    if (!dp.launched && root.isVideo(dp.cls, dp.slug)) {
+                        // another video opened (from the file manager ...) while one is already playing: the new one
+                        // floats on top as a pop-up, the one in the content window keeps playing
+                        var k = Object.assign({}, root.known); k[dp.addr] = true; root.known = k
+                        pop.popLoose(dp.addr, root.pretty(dp.cls))
+                        return
+                    }
                     if (!dp.launched && parts[0] !== "true" && dp.slug !== root.viewerSlug) {
                         // the app opened a second window by itself (a website's sign-in popup in Firefox, a "new window"):
                         // nobody launched it again, so it is not a duplicate to drop. Show it floating and centred

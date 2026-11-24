@@ -56,10 +56,38 @@ Scope {
             'dispatch hl.dsp.window.move({ ' + sl + ', x = ' + g.x + ', y = ' + g.y + ' })',
             'dispatch hl.dsp.focus({ ' + sl + ' })']).join(" ; ")])
     }
+    // a window that belongs to no content window (a second video opened while one is playing): popped out at once,
+    // closing its pop-up closes the window itself
+    function popLoose(addr, name) {
+        if (popped.some(x => x.addr === addr)) return
+        var sl = 'window = "address:0x' + addr + '"'
+        var b = view.frameBox()
+        var g = { w: Math.round(b.w * 0.6), h: Math.round(b.h * 0.6), fs: false }
+        // each further one a little lower right, so they do not hide each other exactly
+        var n = popped.filter(x => x.loose).length
+        g.x = Math.round((view.width - g.w) / 2 + n * 40)
+        g.y = Math.round((view.height - g.h + headH) / 2 + n * 40)
+        popped = popped.concat([{ slug: "", addr: addr, name: name, sel: sl, term: false, loose: true }])
+        var pg = Object.assign({}, popGeo); pg[addr] = g; popGeo = pg
+        var ws = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
+        view.releaseKeys()
+        Quickshell.execDetached(["hyprctl", "--batch", [
+            'dispatch hl.dsp.window.float({ ' + sl + ', action = "enable" })',
+            'dispatch hl.dsp.window.fullscreen({ ' + sl + ', action = "unset" })',
+            'dispatch hl.dsp.window.move({ workspace = "' + ws + '", follow = false, ' + sl + ' })',
+            'dispatch hl.dsp.window.pin({ ' + sl + ', action = "enable" })'].concat(popProps(sl, true)).concat([
+            'dispatch hl.dsp.window.resize({ ' + sl + ', x = ' + g.w + ', y = ' + g.h + ' })',
+            'dispatch hl.dsp.window.move({ ' + sl + ', x = ' + g.x + ', y = ' + g.y + ' })',
+            'dispatch hl.dsp.focus({ ' + sl + ' })']).join(" ; ")])
+    }
     // close the pop-up: the window goes back to its sub-function (shown there if that page is open, else hidden)
     function popBack(addr) {
         var p = popped.filter(x => x.addr === addr)
         if (p.length === 0) return
+        if (p[0].loose) {                     // nowhere to go back to: close the window (forgetPopped follows on closewindow)
+            Quickshell.execDetached(["bash", Panes.script("close-ext.sh"), addr])
+            return
+        }
         if (drag && drag.addr === addr) drag = null
         popped = popped.filter(x => x.addr !== addr)
         var pg = Object.assign({}, popGeo); delete pg[addr]; popGeo = pg
