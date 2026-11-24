@@ -10,6 +10,7 @@ Scope {
     id: root
 
     property bool dnd: false
+    property int replying: 0         // cards with an open reply field
     property var shown: []           // newest first, at most `limit`
     readonly property int limit: 4
 
@@ -28,6 +29,7 @@ Scope {
         actionsSupported: true
         bodyMarkupSupported: true
         imageSupported: true
+        inlineReplySupported: true          // REPLY in the card (NotificationCard), used by Messenger notices
         keepOnReload: false
 
         onNotification: note => {
@@ -49,6 +51,8 @@ Scope {
         visible: root.visibleNotes.length > 0
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.namespace: "projectnier-notify"
+        // only while a card's reply field is open: the notices never take the keyboard otherwise
+        WlrLayershell.keyboardFocus: root.replying > 0 ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
         exclusionMode: ExclusionMode.Ignore
         anchors { top: true }
         margins { top: 22 }
@@ -68,7 +72,9 @@ Scope {
                 NotificationCard {
                     required property var modelData
                     note: modelData
+                    onReplyingChanged: root.replying = Math.max(0, root.replying + (replying ? 1 : -1))
                     onFinished: {
+                        if (replying) root.replying = Math.max(0, root.replying - 1)
                         var n = modelData
                         visible = false                       // stop drawing before the notification object goes away
                         Qt.callLater(function () { n.expire() })

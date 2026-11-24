@@ -5,10 +5,24 @@ import QtQuick
 
 // One notification in the screen's style: dark title bar (app, time, close), paper body,
 // tan action buttons and a thin bar that runs down while it waits to expire.
+// A notification that offers an inline reply (Messenger, scripts/notify-wait.py) gets a REPLY button: it opens a text
+// field in the card (the card stops counting down meanwhile); Enter sends, Escape goes back.
 Item {
     id: root
     required property var note            // a Quickshell Notification
     signal finished()
+    property bool replying: false         // the reply field is open: the notice window takes the keyboard
+    onReplyingChanged: {
+        if (replying) { lifeAnim.pause(); replyInput.text = ""; replyInput.forceActiveFocus() }
+        else if (!leaving) lifeAnim.resume()
+    }
+    function sendReply() {
+        var t = replyInput.text.trim()
+        if (t === "") return
+        note.sendInlineReply(t)
+        replying = false
+        close()
+    }
 
     readonly property bool urgent: note.urgency === NotificationUrgency.Critical
     readonly property real seconds: urgent ? 0 : (note.expireTimeout > 0 ? note.expireTimeout : 7)
@@ -54,7 +68,7 @@ Item {
 
     // timer: when it runs out the card leaves by itself
     Timer {
-        running: root.seconds > 0
+        running: root.seconds > 0 && !root.replying
         interval: root.seconds * 1000
         onTriggered: root.close()
     }
@@ -63,7 +77,7 @@ Item {
     Rectangle {
         id: card
         width: parent.width
-        height: head.height + bodyBox.height + (actionRow.visible ? actionRow.height + 12 : 0) + 4
+        height: head.height + bodyBox.height + (actionRow.visible ? actionRow.height + 12 : 0) + (replyBox.visible ? replyBox.height + 12 : 0) + 4
         color: Theme.paper
         border.width: 1
         border.color: root.bar
@@ -183,11 +197,37 @@ Item {
         // action buttons
         Row {
             id: actionRow
-            visible: actionsModel.length > 0
+            visible: (actionsModel.length > 0 || root.note.hasInlineReply) && !root.replying
             x: 16
             y: head.height + bodyBox.height
             spacing: 8
-            readonly property var actionsModel: root.note.actions.filter(a => a.identifier !== "default")
+            readonly property var actionsModel: root.note.actions.filter(a => a.identifier !== "default" && a.identifier !== "inline-reply")
+
+            // REPLY: opens the text field below
+            Item {
+                id: rb
+                visible: root.note.hasInlineReply
+                readonly property bool lit: rh.containsMouse
+                width: rt.implicitWidth + 24
+                height: 26
+                Rectangle { anchors.fill: parent; color: Theme.paperDark }
+                Rectangle {
+                    height: parent.height
+                    width: rb.lit ? parent.width : 0
+                    color: Theme.ink
+                    Behavior on width { NumberAnimation { duration: Theme.hoverMs; easing.type: Easing.OutCubic } }
+                }
+                Text {
+                    id: rt
+                    anchors.centerIn: parent
+                    text: "Reply"
+                    color: rb.lit ? Theme.paper : Theme.ink
+                    font.family: Theme.font
+                    font.pixelSize: Theme.smallFontSize + 1
+                    Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
+                }
+                MouseArea { id: rh; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.replying = true }
+            }
 
             Repeater {
                 model: actionRow.actionsModel
@@ -221,6 +261,42 @@ Item {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: { ab.modelData.invoke(); root.close() }
                     }
+                }
+            }
+        }
+
+        // reply field (Enter sends, Escape goes back)
+        Rectangle {
+            id: replyBox
+            visible: root.replying
+            x: 16
+            y: head.height + bodyBox.height
+            width: parent.width - 32
+            height: 30
+            color: Theme.paper
+            border.width: 1
+            border.color: Theme.ink
+            Rectangle { x: 10; anchors.verticalCenter: parent.verticalCenter; width: 8; height: 8; color: Theme.ink }
+            TextInput {
+                id: replyInput
+                x: 28
+                width: parent.width - 40
+                anchors.verticalCenter: parent.verticalCenter
+                color: Theme.ink
+                selectionColor: Theme.ink
+                selectedTextColor: Theme.paper
+                font.family: Theme.font
+                font.pixelSize: Theme.fontSize
+                clip: true
+                onAccepted: root.sendReply()
+                Keys.onEscapePressed: root.replying = false
+                Text {
+                    visible: replyInput.text === ""
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: (root.note.inlineReplyPlaceholder || "Write a reply") + ", then Enter"
+                    color: Theme.inkSoft
+                    font.family: Theme.font
+                    font.pixelSize: Theme.fontSize
                 }
             }
         }

@@ -15,7 +15,7 @@ Item {
     property string currentName: ""
     property var messages: []         // oldest first: [{ id, sender, name, body, ts, mine, kind }]
     property int unreadTotal: 0
-    signal incoming(string room, string text)   // a message from someone else in a chat nobody is looking at
+    signal incoming(string room, string text, string roomId)   // a message from someone else in a chat nobody is looking at
     property bool viewing: false      // the messenger is on screen: the open chat counts as read
     onViewingChanged: { if (viewing) seenCurrent() }
 
@@ -208,7 +208,7 @@ Item {
                     // like fbtui: count messages from other people that nobody is looking at
                     if (!watched && (tl[i].type === "m.room.message" || tl[i].type === "m.sticker") && tl[i].sender !== me) {
                         room.local++
-                        if (!/bridge/i.test(room.name)) root.incoming(room.name, preview(tl[i]))
+                        if (!/bridge/i.test(room.name)) root.incoming(room.name, preview(tl[i]), id)
                     }
                 }
                 if (r.unread_notifications) room.server = r.unread_notifications.notification_count
@@ -405,5 +405,17 @@ Item {
         })
     }
     property bool sendError: false            // the last message could not be sent
+
+    // a reply from a notification: straight into that chat, whether it is open or not
+    function sendTo(roomId, text) {
+        var t = String(text).trim()
+        if (t === "" || roomId === "") return
+        txn++
+        call("PUT", "/rooms/" + encodeURIComponent(roomId) + "/send/m.room.message/tui" + Date.now() + "_" + txn,
+             { msgtype: "m.text", body: t }, function (st, d) {
+            if (st !== 200) Quickshell.execDetached(["notify-send", "-a", "Messenger", "-u", "critical", "Reply not sent",
+                                                     "The reply to " + (byId[roomId] ? byId[roomId].name : "the chat") + " could not be sent: " + (st === 0 ? "offline" : "error " + st) + "."])
+        })
+    }
     signal sendFailed(string roomId, string text)
 }

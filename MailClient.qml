@@ -32,7 +32,7 @@ Item {
     }
     property var lastUid: ({})          // address -> newest unread uid already announced
     signal sent()
-    signal incoming(string account, string from, string subject)   // new unread mail (not while the window is shown)
+    signal incoming(string account, string from, string subject, string uid)   // new unread mail (not while the window is shown)
     onViewingChanged: if (viewing && configured) refresh()
 
     // ---- running the helper --------------------------------------------------------------------
@@ -119,7 +119,7 @@ Item {
                 if (seen[a.address] !== undefined) {                  // the first check only sets the baseline
                     var fresh = a.unseen.filter(m => m.uid > seen[a.address])
                     var quiet = viewing && a.address === address     // the window shows this inbox already
-                    if (!quiet) for (var k = 0; k < fresh.length; k++) root.incoming(a.address, fresh[k].from, fresh[k].subject)
+                    if (!quiet) for (var k = 0; k < fresh.length; k++) root.incoming(a.address, fresh[k].from, fresh[k].subject, String(fresh[k].uid))
                     if (fresh.length > 0 && viewing && a.address === address) refresh()
                 }
                 seen[a.address] = Math.max(top, seen[a.address] || 0)

@@ -8,6 +8,7 @@ import QtQuick
 Item {
     // the screen should drop keyboard focus so the content window just focused gets the keys (shell.qml)
     signal releaseKeys()
+    signal quickRequested()     // the Quick Settings button (shell.qml opens QuickSettings)
     id: root
 
     property int page: 0    // selected top tab (Entertainment first); one is always selected
@@ -152,8 +153,10 @@ Item {
         id: mail
         viewing: root.emailOpen
         Component.onCompleted: start()
-        onIncoming: (account, from, subject) => Quickshell.execDetached(["notify-send", "-a", "Email", "-i", "mail-unread",
-            from + (accounts.length > 1 ? "  ·  " + account.replace(/@.*/, "") : ""), root.markupSafe(subject)])
+        onIncoming: (account, from, subject, uid) => root.notifyWithButtons("email", account, uid, [
+            "--app", "Email", "--icon", "mail-unread",
+            "--summary", from + (accounts.length > 1 ? "  ·  " + account.replace(/@.*/, "") : ""),
+            "--body", root.markupSafe(subject), "--action", "default=Open", "--action", "open=Open"])
     }
     readonly property int mailUnread: mail.totalUnread
     // health light (top right): Messenger, its bridge and mail; one notice when something breaks
@@ -184,10 +187,60 @@ Item {
     }
     Connections {
         target: matrix
-        function onIncoming(room, text) {
-            Quickshell.execDetached(["notify-send", "-a", "Messenger", "-i", "mail-unread", room, root.markupSafe(text)])
+        function onIncoming(room, text, roomId) {
+            root.notifyWithButtons("messenger", "", roomId, ["--app", "Messenger", "--icon", "mail-unread",
+                "--summary", room, "--body", root.markupSafe(text), "--action", "default=Open", "--action", "open=Open",
+                "--reply", "Reply to " + room])
         }
     }
+    // ---- notices with buttons (scripts/notify-wait.py waits for the answer while the card is up) ----
+    // kind: messenger (ref = room id; OPEN shows the chat, REPLY sends into it) | email (account + ref = uid; OPEN shows it)
+    function notifyWithButtons(kind, account, ref, args) {
+        var p = noticeComp.createObject(root, { kind: kind, account: account, ref: ref,
+                                                command: ["python3", "-I", Panes.script("notify-wait.py")].concat(args) })
+        p.running = true
+    }
+    Component {
+        id: noticeComp
+        Process {
+            id: np
+            property string kind
+            property string account
+            property string ref
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    var d = {}
+                    try { d = JSON.parse(text) } catch (e) {}
+                    root.noticeAnswered(np.kind, np.account, np.ref, d)
+                    np.destroy(100)
+                }
+            }
+        }
+    }
+    function noticeAnswered(kind, account, ref, d) {
+        var open = d.action === "open" || d.action === "default"
+        if (kind === "messenger") {
+            if (d.reply !== undefined) matrix.sendTo(ref, d.reply)
+            else if (open) showMessengerChat(ref)
+        } else if (kind === "email" && open) showEmailMessage(account, ref)
+    }
+    // like the Bluetooth agent: the built-in app goes to its usual sub-function unless it already lives somewhere
+    function showMessengerChat(roomId) {
+        var key = "Communication/Messages"
+        if (messengerSlug === "" && !occupied(slugOf(key))) messengerSlug = slugOf(key)
+        if (messengerSlug === "") return
+        gotoSlug(messengerSlug)
+        matrix.open(roomId)
+    }
+    function showEmailMessage(account, uid) {
+        var key = "Communication/Email"
+        if (emailSlug === "" && !occupied(slugOf(key))) emailSlug = slugOf(key)
+        if (emailSlug === "") return
+        gotoSlug(emailSlug)
+        if (account !== "" && mail.address !== account) mail.switchTo(account)
+        if (uid !== "") mail.open(uid)
+    }
+
     // notification bodies are read as markup: a chat message like "<3 u" must not lose text as a "tag"
     function markupSafe(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
 
@@ -1029,6 +1082,32 @@ Item {
             font.family: Theme.font
             font.pixelSize: Theme.dateSize
             font.letterSpacing: 3
+        }
+    }
+
+    // ---- Quick Settings button (top right, left of the health light) ----
+    Text {
+        id: quickBtn
+        anchors.right: healthMark.left
+        anchors.rightMargin: 22
+        anchors.verticalCenter: healthMark.verticalCenter
+        text: "\uf1de"
+        color: quickHit.containsMouse ? Theme.ink : Theme.inkSoft
+        font.family: Theme.font
+        font.pixelSize: Theme.fontSize + 2
+        MouseArea {
+            id: quickHit
+            anchors.fill: parent
+            anchors.margins: -8
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.quickRequested()
+        }
+        HeadTip {
+            anchors.right: parent.right
+            anchors.top: parent.bottom
+            anchors.topMargin: 14
+            text: quickHit.containsMouse ? "Quick settings" : ""
         }
     }
 

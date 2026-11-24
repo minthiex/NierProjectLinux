@@ -8,6 +8,7 @@ ShellRoot {
     Notifications {}
     VolumePopup {}
     Lock { id: lock }
+    QuickSettings { id: quick; onLockRequested: lock.lockNow() }
     Idle { onLockRequested: lock.lockNow() }
 
     Variants {
@@ -39,7 +40,12 @@ ShellRoot {
                 }
             }
 
-            NierScreen { id: screenView; anchors.fill: parent; onReleaseKeys: { win.letGo = true; giveBack.restart() } }
+            NierScreen {
+                id: screenView
+                anchors.fill: parent
+                onReleaseKeys: { win.letGo = true; giveBack.restart() }
+                onQuickRequested: quick.toggle()
+            }
         }
     }
 }
