@@ -116,6 +116,20 @@ def bridge_ready():
         meta_fix_perms()
         if not (BRIDGE / "meta/registration.yaml").exists():
             fail("the bridge registration was not created", "docker")
+    # compose names a project after its folder unless told otherwise: never let "up" take over (recreate, later
+    # remove) containers of the same project name that belong to another folder (the real bridge, someone's own app)
+    r = run(["docker", "compose", "config", "--format", "json"], cwd=BRIDGE)
+    try:
+        project = json.loads(r.stdout)["name"]
+    except (ValueError, KeyError):
+        fail("docker compose cannot read the bridge recipe: " + (r.stderr or "").strip()[-200:], "docker")
+    r = run(["docker", "ps", "-a", "--filter", f"label=com.docker.compose.project={project}",
+             "--format", '{{.Names}}\t{{.Label "com.docker.compose.project.working_dir"}}'])
+    for line in r.stdout.splitlines():
+        name, _, wd = line.partition("\t")
+        if wd and Path(wd).resolve() != BRIDGE.resolve():
+            fail(f"the Docker project name '{project}' is already used by {name} from {wd}: "
+                 "give this bridge its own name (COMPOSE_PROJECT_NAME or 'name:' in docker-compose.yml)", "docker")
     step("Starting the containers")
     r = run(["docker", "compose", "up", "-d"], cwd=BRIDGE)
     if r.returncode != 0:
