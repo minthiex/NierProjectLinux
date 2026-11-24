@@ -1,0 +1,41 @@
+# Local-only Matrix homeserver + Messenger bridge for the ProjectNier shell's Messenger.
+# Nothing is exposed beyond 127.0.0.1. install.sh copies this folder to ~/.local/share/projectnier/messenger-bridge,
+# where SET UP MESSENGER (or ./setup.sh <name>) runs it; its data (synapse/, meta/) stays there.
+# The project name is fixed: Docker Compose otherwise names a project after its folder and could act on another
+# project's containers.
+name: projectnier-messenger
+services:
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: fbtui-synapse
+    restart: unless-stopped
+    environment:
+      UID: ${HOST_UID}
+      GID: ${HOST_GID}
+    volumes:
+      - ./synapse:/data
+      - ./meta:/meta:ro
+    ports:
+      - "127.0.0.1:8008:8008"
+    logging:                     # the log used to grow without limit: keep 3 x 10 MB
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mautrix-meta:
+    image: dock.mau.dev/mautrix/meta:latest
+    container_name: fbtui-meta
+    restart: unless-stopped
+    environment:
+      UID: ${HOST_UID}
+      GID: ${HOST_GID}
+    volumes:
+      - ./meta:/data
+    depends_on:
+      - synapse
+    logging:                     # the log used to grow without limit: keep 3 x 10 MB
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

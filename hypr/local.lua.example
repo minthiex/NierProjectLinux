@@ -1,0 +1,13 @@
+-- This machine only (copy to ~/.config/hypr/local.lua; it is not part of the dotfiles).
+-- projectnier.lua loads it if it exists. Call hl.* here for anything machine-specific, and return the
+-- programs to start at login.
+
+-- a fixed monitor layout instead of the automatic one, for example:
+-- hl.monitor({ output = "DP-1", mode = "2560x1440@144", position = "0x0", scale = 1 })
+
+return {
+  autostart = {
+    -- "sleep 4 && discord --start-minimized",
+    -- "sleep 4 && keepassxc",
+  },
+}

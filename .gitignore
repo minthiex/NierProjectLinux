@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+# machine-local files that must never be shared (they live outside this repo anyway)
+local.lua
+hyprland-gui.lua
+session.json
+mail.json
+*.pre-projectnier-*

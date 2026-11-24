@@ -1,0 +1,4 @@
+# created by setup: the server database, the bridge database and logins, the uid/gid file
+synapse/
+meta/
+.env
