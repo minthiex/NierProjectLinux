@@ -28,7 +28,7 @@ Scope {
 
     // ---- mail (only when a login is saved) ----
     property double mailBadSince: 0
-    function mailBad() { return mail && mail.configured && (mail.status === "OFFLINE" || mail.status === "LOGIN REFUSED") }
+    function mailBad() { return mail && mail.configured && (mail.status === "OFFLINE" || mail.status === "LOGIN REFUSED" || mail.status === "KEYRING LOCKED") }
     function trackMail() {
         if (!mailBad()) mailBadSince = 0
         else if (mailBadSince === 0) mailBadSince = Date.now()

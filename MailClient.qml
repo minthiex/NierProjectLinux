@@ -130,7 +130,7 @@ Item {
             var errs = d.accounts.filter(a => a.error)
             if (d.accounts.length > 0 && errs.length === d.accounts.length) {
                 connected = false
-                status = errs.some(a => a.code === "auth") ? "LOGIN REFUSED" : "OFFLINE"
+                status = errs.some(a => a.code === "locked") ? "KEYRING LOCKED" : errs.some(a => a.code === "auth") ? "LOGIN REFUSED" : "OFFLINE"
             } else if (errs.length === 0 && status !== "CONNECTED") {
                 connected = true
                 status = "CONNECTED"
@@ -150,13 +150,14 @@ Item {
             mails = d.messages
             unread = d.unread
             setUnread(who, d.unread)
-            if (notice === "offline" || notice === "login") notice = ""
+            if (notice === "offline" || notice === "login" || notice === "locked") notice = ""
         })
     }
 
     function fail(d) {
         connected = false
         if (d && d.code === "auth") { status = "LOGIN REFUSED"; notice = "login" }
+        else if (d && d.code === "locked") { status = "KEYRING LOCKED"; notice = "locked" }
         else { status = "OFFLINE"; notice = "offline" }
     }
 

@@ -9,9 +9,12 @@ usage:  mail.py status
         mail.py send              JSON in $MAIL_PAYLOAD: {to, subject, body, inReplyTo, references}
         mail.py setup             JSON in $MAIL_PAYLOAD: {address, password}  -> checks it, then adds it
         mail.py remove            JSON in $MAIL_PAYLOAD: {address}
+        mail.py migrate           move the app passwords from mail.json into the keyring (verified one by one)
 The account to use comes from $MAIL_ACCOUNT (default: the first saved one).
-Everything is printed as one JSON object; failures are {"error": "...", "code": "auth|net|other"}.
-The login lives in ~/.config/projectnier/mail.json (mode 600).
+Everything is printed as one JSON object; failures are {"error": "...", "code": "auth|net|locked|other"}.
+The accounts live in ~/.config/projectnier/mail.json (mode 600). An app password is either in that file or, with
+{"keyring": true}, in the desktop keyring (Secret Service, here KeePassXC) under service=projectnier-mail account=<address>.
+Reading the keyring never prompts: a locked database is reported as code "locked" (the window shows KEYRING LOCKED).
 """
 import email
 import email.policy
@@ -20,6 +23,7 @@ import json
 import os
 import re
 import smtplib
+import subprocess
 import sys
 from email.header import decode_header, make_header
 from email.message import EmailMessage
@@ -43,16 +47,93 @@ def fail(msg, code="other"):
 
 
 def read_accounts():
-    """[{address, password}, ...]; also understands the first version's single {address, password}"""
+    """[{address, password} or {address, keyring: true}, ...]; also understands the first version's single
+    {address, password}. Use password_of() to get the password of either kind."""
     try:
         c = json.loads(CFG.read_text())
     except (OSError, ValueError):
         return []
     if isinstance(c.get("accounts"), list):
-        return [a for a in c["accounts"] if a.get("address") and a.get("password")]
+        return [a for a in c["accounts"] if a.get("address") and (a.get("password") or a.get("keyring"))]
     if c.get("address") and c.get("password"):
         return [{"address": c["address"], "password": c["password"]}]
     return []
+
+
+# ------------------------------------------------------------------ keyring (Secret Service over D-Bus)
+KEYRING_SERVICE = "projectnier-mail"
+
+
+class Locked(Exception):
+    """the keyring is there but locked (or has no such entry yet): never prompt from a background check"""
+
+
+def keyring_available():
+    try:
+        import gi
+        gi.require_version("Gio", "2.0")
+        from gi.repository import Gio, GLib
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        r = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner",
+                          GLib.Variant("(s)", ("org.freedesktop.secrets",)), None, Gio.DBusCallFlags.NONE, 3000, None)
+        return bool(r.unpack()[0])
+    except Exception:
+        return False
+
+
+def keyring_lookup(address):
+    """the stored app password; raises Locked if the database is locked or the entry is missing"""
+    # only ask a keyring that already runs: a call to a missing one can make D-Bus start KWallet's daemon, which then
+    # holds the name KeePassXC needs (seen 2026-11-24)
+    if not keyring_available():
+        raise Locked("no keyring service")
+    import gi
+    gi.require_version("Gio", "2.0")
+    from gi.repository import Gio, GLib
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    svc, path, iface = "org.freedesktop.secrets", "/org/freedesktop/secrets", "org.freedesktop.Secret.Service"
+
+    def call(method, args, sig):
+        return bus.call_sync(svc, path, iface, method, GLib.Variant(sig, args), None,
+                             Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
+    try:
+        _, session = call("OpenSession", ("plain", GLib.Variant("s", "")), "(sv)")
+        unlocked, locked = call("SearchItems", ({"service": KEYRING_SERVICE, "account": address},), "(a{ss})")
+        if not unlocked:
+            raise Locked("locked" if locked else "missing")
+        secrets = call("GetSecrets", (unlocked[:1], session), "(aoo)")[0]
+        value = secrets[unlocked[0]][2]
+        return bytes(value).decode()
+    except Locked:
+        raise
+    except Exception as e:                      # service gone, access refused ...: same as locked for the caller
+        raise Locked(str(e))
+
+
+def keyring_store(address, password):
+    """True if the keyring now holds it (secret-tool may show the keyring's own prompt: only on user actions)"""
+    try:
+        r = subprocess.run(["secret-tool", "store", "--label=ProjectNier mail: " + address,
+                            "service", KEYRING_SERVICE, "account", address],
+                           input=password, text=True, capture_output=True, timeout=60)
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def keyring_clear(address):
+    try:
+        subprocess.run(["secret-tool", "clear", "service", KEYRING_SERVICE, "account", address],
+                       capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def password_of(account):
+    """raises Locked for a keyring account that cannot be read right now"""
+    if account.get("password"):
+        return account["password"]
+    return keyring_lookup(account["address"])
 
 
 def write_accounts(accounts):
@@ -74,10 +155,11 @@ def load_cfg():
     if not accounts:
         fail("no login saved", "nologin")
     want = os.environ.get("MAIL_ACCOUNT", "").lower()
-    for a in accounts:
-        if a["address"].lower() == want:
-            return a["address"], a["password"]
-    return accounts[0]["address"], accounts[0]["password"]
+    a = next((x for x in accounts if x["address"].lower() == want), accounts[0])
+    try:
+        return a["address"], password_of(a)
+    except Locked as e:
+        fail("the keyring cannot be read (" + str(e) + "): open and unlock KeePassXC", "locked")
 
 
 def imap_open(addr, pw, readonly=True):
@@ -193,8 +275,9 @@ def cmd_check():
     for a in read_accounts():
         entry = {"address": a["address"], "unread": 0, "unseen": []}
         try:
+            pw = password_of(a)
             m = imaplib.IMAP4_SSL(IMAP_HOST, timeout=TIMEOUT)
-            m.login(a["address"], a["password"])
+            m.login(a["address"], pw)
             m.select("INBOX", readonly=True)
             typ, un = m.uid("SEARCH", None, "UNSEEN")
             uids = un[0].split() if un and un[0] else []
@@ -213,6 +296,8 @@ def cmd_check():
                     entry["unseen"].append({"uid": int(u.group(1)), "from": name or address,
                                             "subject": dh(msg.get("Subject", "")) or "(no subject)"})
             m.logout()
+        except Locked as e:
+            entry.update(error=str(e), code="locked")
         except imaplib.IMAP4.error as e:
             entry.update(error=str(e), code="auth")
         except OSError as e:
@@ -316,13 +401,47 @@ def cmd_setup():
     except OSError as e:
         fail(e, "net")
     accounts = [a for a in read_accounts() if a["address"].lower() != addr.lower()]
-    accounts.append({"address": addr, "password": pw})
+    # into the keyring when there is one (checked by reading it back), else into the file as before
+    if keyring_available() and keyring_store(addr, pw) and _reads_back(addr, pw):
+        accounts.append({"address": addr, "keyring": True})
+    else:
+        accounts.append({"address": addr, "password": pw})
     write_accounts(accounts)
     out({"ok": True, "address": addr, "accounts": [a["address"] for a in accounts]})
 
 
+def _reads_back(addr, pw):
+    try:
+        return keyring_lookup(addr) == pw
+    except Locked:
+        return False
+
+
+def cmd_migrate():
+    """every app password still in mail.json goes into the keyring; an account is only changed to {keyring: true}
+    after its password reads back from the keyring unchanged. Nothing is lost if the keyring is missing or locked."""
+    if not keyring_available():
+        fail("no keyring service: turn on Secret Service Integration in KeePassXC", "locked")
+    accounts, moved, kept = read_accounts(), 0, []
+    for a in accounts:
+        if not a.get("password"):
+            continue
+        if keyring_store(a["address"], a["password"]) and _reads_back(a["address"], a["password"]):
+            a.pop("password")
+            a["keyring"] = True
+            moved += 1
+        else:
+            kept.append(a["address"])
+    if moved:
+        write_accounts(accounts)
+    out({"ok": not kept, "moved": moved, "kept_in_file": kept})
+
+
 def cmd_remove():
     addr = str(payload().get("address", "")).lower()
+    for a in read_accounts():
+        if a["address"].lower() == addr and a.get("keyring"):
+            keyring_clear(a["address"])
     accounts = [a for a in read_accounts() if a["address"].lower() != addr]
     if accounts:
         write_accounts(accounts)
@@ -356,6 +475,8 @@ def main():
             cmd_setup()
         elif c == "remove":
             cmd_remove()
+        elif c == "migrate":
+            cmd_migrate()
         else:
             fail("unknown command")
     except SystemExit:

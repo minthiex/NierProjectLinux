@@ -340,6 +340,7 @@ Item {
             font.letterSpacing: 1
             text: client.notice === "offline" ? "CANNOT REACH GMAIL. RETRYING EVERY 90 SECONDS, OR PRESS REFRESH."
                 : client.notice === "login" ? "GOOGLE REFUSED THE LOGIN. THE APP PASSWORD MAY HAVE BEEN REVOKED."
+                : client.notice === "locked" ? "THE APP PASSWORD IS IN KEEPASSXC: UNLOCK ITS DATABASE, THEN PRESS REFRESH."
                 : client.notice
         }
 
