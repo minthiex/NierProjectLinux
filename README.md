@@ -5,8 +5,6 @@ A full-screen desktop shell for Hyprland in the style of the menu screens of *Ni
 Missions, Communication, Console, Archive, Network, Configuration, System, Logout), each with its sub-functions on
 the left, an information panel in the middle and a content window on the right where the sub-function's app runs.
 
-<!-- Add a screenshot of your own screen here, e.g. docs/screen.png -->
-
 Built in: a Messenger client (Facebook, through a local Matrix bridge), Gmail, a Bluetooth manager, a notification
 daemon with reply buttons, a lock screen, Quick Settings, a health light with a Repair button, and a search box that
 finds apps, sub-functions and menus.
