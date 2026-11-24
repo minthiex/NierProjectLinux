@@ -1,10 +1,10 @@
 import QtQuick
 
-// Search box at the top left: type an application name, pick a result with the mouse or the arrow keys + Enter.
-// The screen decides what a pick does (go to its sub-function, or ask for a category).
+// Search box at the top left: type an application, a sub-function or a menu, pick a result with the mouse or the
+// arrow keys + Enter. The screen decides what a pick does (go to that sub-function / menu, or ask for a category).
 Item {
     id: root
-    property var results: []                 // [{ name, loc }]  loc: "Menu / Sub-function" or "" (not in any)
+    property var results: []                 // [{ name, loc, kind }]  kind: "" (app) | "function" | "menu"; loc: where it leads, "" = nowhere yet
     property string text: field.text
     signal picked(var item)
     signal cleared()
@@ -43,7 +43,7 @@ Item {
 
         Text {
             visible: field.text === "" && !field.activeFocus
-            text: "SEARCH APPLICATIONS"
+            text: "SEARCH APPS & FUNCTIONS"
             color: Theme.inkSoft
             font.family: Theme.font
             font.pixelSize: Theme.smallFontSize + 1
@@ -90,8 +90,16 @@ Item {
                     height: 32
 
                     Rectangle { anchors.fill: parent; color: row.lit ? Theme.ink : Theme.paper }
-                    Text {
+                    // a sub-function or a menu (not an app): a small square in front, like the menu's own items
+                    Rectangle {
+                        visible: row.modelData.kind === "function" || row.modelData.kind === "menu"
                         x: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 7; height: 7
+                        color: row.lit ? Theme.paper : Theme.ink
+                    }
+                    Text {
+                        x: row.modelData.kind ? 27 : 12
                         anchors.verticalCenter: parent.verticalCenter
                         width: parent.width * 0.5
                         elide: Text.ElideRight
@@ -107,7 +115,9 @@ Item {
                         width: parent.width * 0.5 - 30
                         horizontalAlignment: Text.AlignRight
                         elide: Text.ElideLeft
-                        text: row.modelData.loc !== "" ? row.modelData.loc.toUpperCase() : "NOT IN A CATEGORY"
+                        text: row.modelData.kind === "menu" ? "MENU"
+                            : row.modelData.kind === "function" ? "FUNCTION · " + row.modelData.loc.toUpperCase()
+                            : row.modelData.loc !== "" ? row.modelData.loc.toUpperCase() : "NOT IN A CATEGORY"
                         color: row.lit ? Theme.paper : (row.modelData.loc !== "" ? Theme.inkSoft : Theme.accent)
                         font.family: Theme.font
                         font.pixelSize: Theme.smallFontSize
