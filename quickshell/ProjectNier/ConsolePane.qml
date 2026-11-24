@@ -19,6 +19,7 @@ Item {
     signal openApp(string app)               // an action wants a built-in app in the content window
     signal hideSub()                         // the "-" in the title bar: take this sub-function out of its menu
     signal restoreSub(string key)            // "Restore ..." button of the Restore Functions sub-function
+    signal removeSub(string key)             // its "-": remove that hidden sub-function for good
     property bool hideArmed: false
     signal removeApp(string cls, string title)           // the "-" button on a registered application's row
     signal openViewer(var cmd)               // an image was clicked: show it in the image viewer
@@ -435,7 +436,8 @@ Item {
                 Text {
                     x: 30
                     anchors.verticalCenter: parent.verticalCenter
-                    text: btn.rmArmed ? "Remove from list?  Click \u2212 again to confirm" : (btn.armed ? "Click again to confirm:  " + btn.modelData.label : btn.modelData.label)
+                    text: btn.rmArmed ? (btn.modelData.removeKey !== undefined ? "Remove for good?  Click \u2212 again to confirm"
+                                                                       : "Remove from list?  Click \u2212 again to confirm") : (btn.armed ? "Click again to confirm:  " + btn.modelData.label : btn.modelData.label)
                     color: btn.lit ? Theme.paper : Theme.ink
                     font.family: Theme.font
                     font.pixelSize: Theme.fontSize
@@ -461,9 +463,9 @@ Item {
                     }
                     onExited: if (btn.armed) disarm.restart()
                 }
-                // "-": take a registered application out of this list
+                // "-": take a registered application out of this list / remove a hidden sub-function for good
                 Rectangle {
-                    visible: btn.modelData.removeCls !== undefined
+                    visible: btn.modelData.removeCls !== undefined || btn.modelData.removeKey !== undefined
                     anchors.right: parent.right
                     anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
@@ -486,6 +488,7 @@ Item {
                         onClicked: {
                             if (!btn.rmArmed) { btn.rmArmed = true; rmDisarm.restart(); return }
                             btn.rmArmed = false
+                            if (btn.modelData.removeKey !== undefined) { root.removeSub(btn.modelData.removeKey); return }
                             root.removeApp(btn.modelData.removeCls, btn.modelData.removeTitle || "")
                         }
                         onExited: if (btn.rmArmed) rmDisarm.restart()

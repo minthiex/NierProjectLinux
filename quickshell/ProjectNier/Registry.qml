@@ -11,6 +11,7 @@ QtObject {
     readonly property string file: Quickshell.env("HOME") + "/.local/share/ProjectNier/apps.json"
     property var apps: []                 // [{ cls, name, cmd, tab, sub }]
     property var hidden: []               // ["Menu/Sub"] sub-functions taken out of their menu
+    property var removed: []              // ["Menu/Sub"] built-in sub-functions removed for good (not even restorable)
     property var order: ({})              // menu -> [sub names] in the user's order
 
     // system dialogs that must be able to appear (authentication, file pickers, ...)
@@ -44,6 +45,7 @@ QtObject {
             lastText = t
             apps = d.apps || []
             hidden = d.hidden || []
+            removed = d.removed || []
             order = d.order || ({})
         } catch (e) {}
     }
@@ -51,7 +53,7 @@ QtObject {
     // written through the FileView itself: atomic, and in order (separate writer processes could finish out of order
     // and an older state would win). lastText makes the watcher ignore our own write.
     function save() {
-        lastText = JSON.stringify({ apps: apps, hidden: hidden, order: order })
+        lastText = JSON.stringify({ apps: apps, hidden: hidden, removed: removed, order: order })
         ownTexts = ownTexts.concat([lastText]).slice(-32)
         store.waitForJob()                  // a write still in progress would swallow this one (tested: quick ▲/▼ clicks)
         store.setText(lastText)
@@ -95,26 +97,46 @@ QtObject {
     function isHidden(key) { return hidden.indexOf(key) >= 0 }
     function hide(key) { if (!isHidden(key)) { hidden = hidden.concat([key]); save() } }
     function restore(key) { hidden = hidden.filter(k => k !== key); save() }
+    function isRemoved(key) { return removed.indexOf(key) >= 0 }
+    // remove a hidden sub-function for good: one made by registered apps loses those apps (their windows are asked
+    // about again), a built-in one goes on the removed list (apps.json "removed": delete the entry to get it back)
+    function removeSub(key) {
+        var tab = key.split("/")[0], sub = key.substring(key.indexOf("/") + 1)
+        var page = Pages.list.filter(p => p.label === tab)[0]
+        var builtin = page !== undefined && page.subs.some(s => s.name === sub)
+        hidden = hidden.filter(k => k !== key)
+        apps = apps.filter(a => !(a.tab === tab && a.sub === sub))
+        if (builtin && !isRemoved(key)) removed = removed.concat([key])
+        if (order[tab]) {
+            var o = Object.assign({}, order)
+            o[tab] = o[tab].filter(n => n !== sub)
+            order = o
+        }
+        save()
+    }
 
-    // what the "Restore Functions" sub-function shows: every hidden sub-function with a button to bring it back
+    // what the "Restore Functions" sub-function shows: one button per hidden sub-function (click: bring it back,
+    // its "\u2212": remove it for good)
     readonly property string restoreName: "Restore Functions"
     function restoreSpec() {
-        var rows = hidden.map(k => [k.split("/")[0].toUpperCase(), k.substring(k.indexOf("/") + 1)])
-        if (rows.length === 0) rows = [["HIDDEN", "nothing: every sub-function is shown"]]
+        var keys = hidden.filter(k => !isRemoved(k))
         return {
-            rows: rows,
-            actions: hidden.map(k => ({ label: "Restore " + k.substring(k.indexOf("/") + 1), restoreKey: k }))
+            rows: [["HIDDEN", keys.length === 0 ? "nothing: every sub-function is shown"
+                                                : keys.length + (keys.length === 1 ? " sub-function" : " sub-functions")]]
+                  .concat(keys.length > 0 ? [["CLICK", "restore    \u2212  remove for good"]] : []),
+            actions: keys.map(k => ({ label: "Restore " + k.substring(k.indexOf("/") + 1) + "  \u00b7  " + k.split("/")[0],
+                                      restoreKey: k, removeKey: k }))
         }
     }
 
     // the visible sub-functions of a menu, in the user's order (new ones go last)
     function arrange(tab, subs) {
-        var vis = subs.filter(s => !isHidden(tab + "/" + s.name))
+        var vis = subs.filter(s => !isHidden(tab + "/" + s.name) && !isRemoved(tab + "/" + s.name))
         var o = order[tab] || []
         return vis.map((s, i) => ({ s: s, r: o.indexOf(s.name) >= 0 ? o.indexOf(s.name) : o.length + i }))
                   .sort((a, b) => a.r - b.r).map(x => x.s)
     }
-    function hiddenSubs(tab, subs) { return subs.filter(s => isHidden(tab + "/" + s.name)) }
+    function hiddenSubs(tab, subs) { return subs.filter(s => isHidden(tab + "/" + s.name) && !isRemoved(tab + "/" + s.name)) }
     // move a sub-function up (-1) or down (+1) among the visible ones
     function move(tab, subs, name, delta) {
         var names = arrange(tab, subs).map(s => s.name)

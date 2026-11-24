@@ -1302,6 +1302,7 @@ Item {
         onLaunching: root.claimNext()
         onGate: (what, go) => root.gated(what, go)
         onRestoreSub: key => Registry.restore(key)
+        onRemoveSub: key => Registry.removeSub(key)
         onHideSub: { Registry.hide(root.pane); root.selectFirst() }
         onRemoveApp: (cls, title) => { Registry.remove(cls, title); if (root.specOf(root.pane) === undefined) root.selectFirst() }
     }
