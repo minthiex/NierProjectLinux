@@ -1,8 +1,13 @@
 #!/bin/sh
 # key <TAB> value <TAB> percent (optional)
 export LC_ALL=C
-idle=$(top -bn1 | awk '/Cpu\(s\)/{for(i=1;i<=NF;i++) if($i=="id,"||$i=="id") print $(i-1)}')
-cpu=$(awk -v i="${idle:-100}" 'BEGIN{printf "%.0f", 100-i}')
+# CPU use since the last refresh, from /proc/stat (state in the runtime dir); the first look takes a 0.3 s sample
+st="${XDG_RUNTIME_DIR:-/tmp}/projectnier-cpu"
+stat() { awk '/^cpu /{t=0; for(i=2;i<=NF;i++) t+=$i; print t, $5+$6}' /proc/stat; }
+cur=$(stat); prev=$(cat "$st" 2>/dev/null)
+if [ -z "$prev" ]; then prev=$cur; sleep 0.3; cur=$(stat); fi
+printf '%s\n' "$cur" > "$st"
+cpu=$(echo "$prev $cur" | awk '{dt=$3-$1; di=$4-$2; if (dt<=0) print 0; else printf "%.0f", 100*(dt-di)/dt}')
 printf 'CPU\t%s%%\t%s\n' "$cpu" "$cpu"
 free -m | awk '/Mem:/{printf "MEMORY\t%d / %d MiB\t%d\n",$3,$2,$3*100/$2} /Swap:/{if($2>0) printf "SWAP\t%d / %d MiB\t%d\n",$3,$2,$3*100/$2}'
 g=$(cat /sys/class/drm/card*/device/gpu_busy_percent 2>/dev/null | head -1)

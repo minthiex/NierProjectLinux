@@ -233,11 +233,23 @@ vpn)
   blank; row "SAVED PROFILES" "$(nmcli -t -f TYPE con show | grep -cE 'vpn|wireguard')"
   ;;
 netmon)
-  a=$(awk '/:/ && $1!~/lo:|docker|br-|veth/ {rx+=$2; tx+=$10} END{print rx, tx}' /proc/net/dev); sleep 1
-  b=$(awk '/:/ && $1!~/lo:|docker|br-|veth/ {rx+=$2; tx+=$10} END{print rx, tx}' /proc/net/dev)
+  # the rate since the last refresh (state in the runtime dir), instead of sleeping a second every time;
+  # only the first look (or one after a long pause) takes a 1 s sample
+  st="${XDG_RUNTIME_DIR:-/tmp}/projectnier-netmon"
+  cnt() { awk '/:/ && $1!~/lo:|docker|br-|veth/ {rx+=$2; tx+=$10} END{print rx, tx}' /proc/net/dev; }
+  now=$(date +%s%N); b=$(cnt)
+  prev=$(cat "$st" 2>/dev/null)
+  set -- $prev
+  if [ $# -ne 3 ] || [ $(( (now - $1) / 1000000 )) -gt 10000 ] || [ $(( (now - $1) / 1000000 )) -lt 200 ]; then
+    a=$(cnt); t0=$(date +%s%N); sleep 1; now=$(date +%s%N); b=$(cnt)
+  else
+    t0=$1; a="$2 $3"
+  fi
+  printf '%s %s\n' "$now" "$b" > "$st"
+  ms=$(( (now - t0) / 1000000 )); [ "$ms" -lt 1 ] && ms=1
   set -- $a $b
-  row "DOWNLOAD" "$(human $(( $3 - $1 )))/s"
-  row "UPLOAD" "$(human $(( $4 - $2 )))/s"
+  row "DOWNLOAD" "$(human $(( ($3 - $1) * 1000 / ms )))/s"
+  row "UPLOAD" "$(human $(( ($4 - $2) * 1000 / ms )))/s"
   row "TOTAL DOWN" "$(human $3)"
   row "TOTAL UP" "$(human $4)"
   ;;
