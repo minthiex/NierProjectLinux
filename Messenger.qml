@@ -458,8 +458,8 @@ Item {
                     + "Nothing is reachable from outside it.\n\n"
                     + "  1. Pick a user name and password for that local server (they never leave this computer).\n"
                     + "  2. SET UP starts the server and the bridge (the first time downloads them, a few minutes).\n"
-                    + "  3. The chat with the bridge bot opens: send  login messenger  (or  login facebook ) and paste the\n"
-                    + "     cookies it asks for from your browser, where you are signed in to Messenger / Facebook."
+                    + "  3. The chat with the bridge bot opens: send  login messenger  (or  login facebook ) and paste the "
+                    + "cookies it asks for from your browser, where you are signed in to Messenger / Facebook."
             }
             FormField {
                 id: userField
