@@ -428,6 +428,8 @@ Item {
         return ""
     }
     function routeWindow(addr, cls) {
+        // a terminal the file manager opened ("Open Terminal Here", run in terminal): a free floating window
+        if (cls === "projectnier-float") { showOwnWindow(addr); return }
         if (cls.toLowerCase().indexOf("dolphin") >= 0 && liveClaims().some(c => c.fm)) {
             var fc = takeClaim(cls)
             // the newest folder click wins: a Dolphin that an earlier quick click opened here is closed
@@ -1026,6 +1028,8 @@ Item {
             } else if (event.name === "closewindow" || event.name === "windowtitlev2") {
                 if (event.name === "closewindow") {
                     pop.forgetPopped(d)
+                    // Hyprland reuses window addresses: a later window at this address must be routed again
+                    if (root.known[d]) { var k = Object.assign({}, root.known); delete k[d]; root.known = k }
                     var gone = root.extWins.filter(w => w.addr === d)
                     if (gone.length > 0) {
                         root.extWins = root.extWins.filter(w => w.addr !== d)
