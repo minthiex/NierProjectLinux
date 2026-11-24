@@ -5,6 +5,8 @@ topic="$1"; arg="$2"
 now=$(date +%s)
 opt() { hyprctl getoption "$1" 2>/dev/null | sed -n '1s/^[a-z0-9 ]*: //p'; }
 human() { awk -v s="$1" 'BEGIN{split("B KiB MiB GiB TiB",u," ");i=1;while(s>=1024&&i<5){s/=1024;i++}printf "%.1f %s",s,u[i]}'; }
+# the shared Hyprland settings / binds / rules (hyprland.lua only does require("projectnier"))
+hypr_main() { local d="$HOME/.config/hypr"; [ -e "$d/projectnier.lua" ] && echo "$d/projectnier.lua" || echo "$d/hyprland.lua"; }
 timers() { # $1 = kind
   [ -f "$D/timers.txt" ] || return 0
   awk -F'\t' -v now="$now" -v k="$1" '$1>now && $2==k {r=$1-now; printf "%s\t%02d:%02d remaining\t\t\n", $3, int(r/60), r%60}' "$D/timers.txt"
@@ -322,10 +324,10 @@ animations)
   row "WINDOW BORDER" "$(opt general:border_size) px"
   ;;
 winrules)
-  grep -E '^\s*name\s*=' "$HOME/.config/hypr/hyprland.lua" | sed 's/.*"\(.*\)".*/\1/' | awk '{printf "%s\t\t\t\n",$0}' | head -14
+  grep -hE '^\s*name\s*=' "$(hypr_main)" | sed 's/.*"\(.*\)".*/\1/' | awk '{printf "%s\t\t\t\n",$0}' | head -14
   ;;
 binds)
-  grep -E '^\s*(local [a-zA-Z]+ = )?hl\.bind\(' "$HOME/.config/hypr/hyprland.lua" | sed -E 's/^\s*(local [a-zA-Z]+ = )?hl\.bind\(//' | sed -E 's/mainMod \.\. " \+ /SUPER+/; s/^"//; s/", hl\.dsp\.(.*)$/\t\1/' | awk -F'\t' '{x=$2; sub(/\)$/,"",x); printf "%s\t%s\t\t\n",$1,substr(x,1,40)}' | grep -v -E 'XF86|mouse' | head -16
+  grep -hE '^\s*(local [a-zA-Z]+ = )?hl\.bind\(' "$(hypr_main)" | sed -E 's/^\s*(local [a-zA-Z]+ = )?hl\.bind\(//' | sed -E 's/mainMod \.\. " \+ /SUPER+/; s/^"//; s/", hl\.dsp\.(.*)$/\t\1/' | awk -F'\t' '{x=$2; sub(/\)$/,"",x); printf "%s\t%s\t\t\n",$1,substr(x,1,40)}' | grep -v -E 'XF86|mouse' | head -16
   ;;
 notifstyle)
   row "DAEMON" "$(busctl --user status org.freedesktop.Notifications >/dev/null 2>&1 && echo running || echo not running)"
