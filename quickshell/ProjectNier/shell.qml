@@ -10,6 +10,8 @@ ShellRoot {
     Lock { id: lock }
     QuickSettings { id: quick; onLockRequested: lock.lockNow() }
     Idle { onLockRequested: lock.lockNow() }
+    // Configuration -> Startup Apps: start the switched-on apps of ~/.config/autostart, once per Hyprland session
+    Process { running: true; command: ["python3", Quickshell.shellPath("scripts/startup.py"), "run"] }
 
     Variants {
         model: Quickshell.screens

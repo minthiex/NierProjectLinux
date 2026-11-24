@@ -15,6 +15,8 @@ import QtQuick
 QtObject {
     readonly property string home: Quickshell.env("HOME")
     readonly property string dataDir: home + "/.local/share/ProjectNier"
+    // the Hyprland settings live in projectnier.lua (hyprland.lua only loads it; local.lua is this machine's extras)
+    readonly property string hyprConf: home + "/.config/hypr/projectnier.lua"
 
     function script(name) { return Quickshell.shellPath("scripts/" + name) }
     function sh(name, args) { return ["sh", script(name)].concat(args) }
@@ -201,7 +203,7 @@ QtObject {
         "Console/Configuration Editor": {
             rows: [["EDITOR", "micro (in the small terminal)"]],
             actions: [
-                { label: "Hyprland (hyprland.lua)", cmd: edit(home + "/.config/hypr/hyprland.lua"), term: true },
+                { label: "Hyprland (projectnier.lua)", cmd: edit(hyprConf), term: true },
                 { label: "Shell (shell.qml)",       cmd: edit(home + "/.config/quickshell/ProjectNier/shell.qml"), term: true },
                 { label: "Theme (Theme.qml)",       cmd: edit(home + "/.config/quickshell/ProjectNier/Theme.qml"), term: true },
                 { label: "Fish (config.fish)",      cmd: edit(home + "/.config/fish/config.fish"), term: true }
@@ -309,34 +311,47 @@ QtObject {
         "Configuration/Hyprland Settings": {
             script: "info.sh", args: ["hyprland"], interval: 10000,
             actions: [
-                { label: "Edit hyprland.lua", cmd: edit(home + "/.config/hypr/hyprland.lua"), term: true },
+                { label: "Edit projectnier.lua", cmd: edit(hyprConf), term: true },
+                { label: "Edit local.lua (this machine)", cmd: edit(home + "/.config/hypr/local.lua"), term: true },
+                { label: "Check Config", cmd: ["sh", "-c", "Hyprland --verify-config -c \"$HOME/.config/hypr/hyprland.lua\"; printf '\\nPress Enter to close. '; read x"], term: true },
                 { label: "Reload Hyprland Config", cmd: ["hyprctl", "reload"], quiet: true }
             ]
         },
         "Configuration/Animations": {
             script: "info.sh", args: ["animations"], interval: 10000,
-            actions: [{ label: "Edit hyprland.lua", cmd: edit(home + "/.config/hypr/hyprland.lua"), term: true }]
+            actions: [{ label: "Edit projectnier.lua", cmd: edit(hyprConf), term: true }]
         },
         "Configuration/Window Rules": {
             script: "info.sh", args: ["winrules"], interval: 15000,
-            actions: [{ label: "Edit hyprland.lua", cmd: edit(home + "/.config/hypr/hyprland.lua"), term: true }]
+            actions: [{ label: "Edit projectnier.lua", cmd: edit(hyprConf), term: true }]
         },
         "Configuration/Keybindings": {
             script: "info.sh", args: ["binds"], interval: 15000,
-            actions: [{ label: "Edit hyprland.lua", cmd: edit(home + "/.config/hypr/hyprland.lua"), term: true }]
+            actions: [{ label: "Edit projectnier.lua", cmd: edit(hyprConf), term: true }]
         },
         "Configuration/Notification Style": { script: "info.sh", args: ["notifstyle"], interval: 10000 },
         "Configuration/Lock Screen": {
-            rows: [["LOCKER", "ProjectNier session lock"], ["AUTH", "PAM (login)"], ["TRIGGER", "qs -c ProjectNier ipc call lock now"]],
-            actions: [{ label: "Edit LockView.qml", cmd: edit(home + "/.config/quickshell/ProjectNier/LockView.qml"), term: true }]
+            script: "info.sh", args: ["lockscreen"], interval: 10000,
+            actions: [
+                { label: "Lock Now", cmd: ["qs", "-c", "ProjectNier", "ipc", "call", "lock", "now"], quiet: true },
+                { label: "Edit LockView.qml", cmd: edit(home + "/.config/quickshell/ProjectNier/LockView.qml"), term: true }]
         },
         "Configuration/Transparency": {
             script: "info.sh", args: ["transparency"], interval: 10000,
-            actions: [{ label: "Edit hyprland.lua", cmd: edit(home + "/.config/hypr/hyprland.lua"), term: true }]
+            actions: [{ label: "Edit projectnier.lua", cmd: edit(hyprConf), term: true }]
         },
         "Configuration/Layout Settings": {
             script: "info.sh", args: ["layout"], interval: 10000,
-            actions: [{ label: "Edit hyprland.lua", cmd: edit(home + "/.config/hypr/hyprland.lua"), term: true }]
+            actions: [{ label: "Edit projectnier.lua", cmd: edit(hyprConf), term: true }]
+        },
+        "Configuration/Startup Apps": {
+            script: "info.sh", args: ["startup"], interval: 0, delay: 0,
+            input: { placeholder: "Add an app (name or command) and press Enter", cmd: ["python3", script("startup.py"), "add"] },
+            actions: [
+                { label: "Start Them Now", cmd: ["python3", script("startup.py"), "run", "--now"], quiet: true },
+                { label: "Open Startup Folder", cmd: dolphin(home + "/.config/autostart") },
+                confirmAct("Remove Switched-Off Apps", ["python3", script("startup.py"), "prune"])
+            ]
         },
 
         // ================================================================ SYSTEM

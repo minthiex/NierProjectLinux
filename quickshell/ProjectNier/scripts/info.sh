@@ -292,13 +292,33 @@ theme)
   row "GTK THEME" "$(gsettings get org.gnome.desktop.interface gtk-theme | tr -d "'")"
   ;;
 icon)
-  row "ICON THEME" "$(gsettings get org.gnome.desktop.interface icon-theme | tr -d "'")"
+  cur=$(gsettings get org.gnome.desktop.interface icon-theme | tr -d "'")
+  row "ICON THEME" "$cur"
+  row "CLICK" "a theme to use it"
   blank
-  ls /usr/share/icons "$HOME/.local/share/icons" 2>/dev/null | grep -v -E '^$|:$|^default$|^hicolor$' | sort -u | head -12 | awk '{printf "%s\t\t\t\n",$0}'
+  # real icon themes only: an index.theme with icon directories (cursor-only themes have none)
+  for d in "$HOME/.local/share/icons"/* "$HOME/.icons"/* /usr/share/icons/*; do
+    [ -f "$d/index.theme" ] && grep -q '^Directories=.' "$d/index.theme" || continue
+    n=$(basename "$d"); [ "$n" = hicolor ] && continue
+    echo "$n"
+  done | sort -u | while IFS= read -r n; do
+    row "$n" "$([ "$n" = "$cur" ] && echo IN USE)" "" "gsettings set org.gnome.desktop.interface icon-theme $(q "$n")"
+  done
   ;;
 cursor)
-  row "CURSOR THEME" "$(gsettings get org.gnome.desktop.interface cursor-theme | tr -d "'")"
-  row "CURSOR SIZE" "$(gsettings get org.gnome.desktop.interface cursor-size)"
+  cur=$(gsettings get org.gnome.desktop.interface cursor-theme | tr -d "'")
+  size=$(gsettings get org.gnome.desktop.interface cursor-size)
+  row "CURSOR THEME" "$cur"
+  row "CURSOR SIZE" "$size"
+  login=$(sed -n 's/^hl\.env("XCURSOR_THEME", *"\([^"]*\)").*/\1/p' "$(hypr_main)" | head -1)
+  [ -n "$login" ] && row "AT LOGIN" "$login (set in projectnier.lua)"
+  row "CLICK" "a theme to use it until you log out"
+  blank
+  for d in "$HOME/.local/share/icons"/* "$HOME/.icons"/* /usr/share/icons/*; do
+    [ -d "$d/cursors" ] && basename "$d"
+  done | sort -u | while IFS= read -r n; do
+    row "$n" "$([ "$n" = "$cur" ] && echo IN USE)" "" "gsettings set org.gnome.desktop.interface cursor-theme $(q "$n") && hyprctl setcursor $(q "$n") $size >/dev/null"
+  done
   ;;
 fonts)
   row "UI FONT" "$(gsettings get org.gnome.desktop.interface font-name | tr -d "'")"
@@ -314,6 +334,7 @@ shellcfg)
   ls "$HOME/.config/quickshell/ProjectNier" | grep -E '\.qml$' | awk '{printf "%s\t\t\t\n",$0}'
   ;;
 hyprland)
+  row "CONFIG" "$(readlink -f "$(hypr_main)" | sed "s#^$HOME#~#")"
   row "VERSION" "$(hyprctl version -j 2>/dev/null | sed -n 's/.*"tag": "\([^"]*\)".*/\1/p' | head -1)"
   row "MONITOR" "$(hyprctl monitors | awk '/^Monitor/{print $2}' | head -1)"
   row "CONFIG ERRORS" "$(hyprctl configerrors | grep -c .)"
@@ -321,19 +342,42 @@ hyprland)
   ;;
 animations)
   row "ANIMATIONS" "$( [ "$(opt animations:enabled)" = true ] && echo ON || echo OFF)"
-  row "WINDOW BORDER" "$(opt general:border_size) px"
+  blank
+  # the animations the config sets: name, style, speed, curve
+  hyprctl animations | awk '
+    /^\tname:/ {n=$2; o=b=e=sp=st=""}
+    /overridden:/ {o=$2} /bezier:/ {b=$2} /enabled:/ {e=$2} /speed:/ {sp=$2}
+    /style:/ {st=$2; if (o==1 && n !~ /^__/) printf "%s\t%s%s  %s  %s\t\t\n", n, (e==1?"":"OFF  "), st, sp, b}'
   ;;
 winrules)
   grep -hE '^\s*name\s*=' "$(hypr_main)" | sed 's/.*"\(.*\)".*/\1/' | awk '{printf "%s\t\t\t\n",$0}' | head -14
   ;;
 binds)
-  grep -hE '^\s*(local [a-zA-Z]+ = )?hl\.bind\(' "$(hypr_main)" | sed -E 's/^\s*(local [a-zA-Z]+ = )?hl\.bind\(//' | sed -E 's/mainMod \.\. " \+ /SUPER+/; s/^"//; s/", hl\.dsp\.(.*)$/\t\1/' | awk -F'\t' '{x=$2; sub(/\)$/,"",x); printf "%s\t%s\t\t\n",$1,substr(x,1,40)}' | grep -v -E 'XF86|mouse' | head -16
+  # hl.bind(<keys>, hl.dsp.<action>[, { opts }])  ->  keys <TAB> action   (the workspace loop's keys are shown as 1-0)
+  python3 - "$(hypr_main)" <<'PY'
+import re, sys
+for line in open(sys.argv[1], encoding="utf-8"):
+    line = re.sub(r"\s+--.*$", "", line.strip())
+    m = re.match(r'(?:local \w+ = )?hl\.bind\((.*?),\s*hl\.dsp\.(.*)\)$', line)
+    if not m:
+        continue
+    keys, act = m.groups()
+    keys = keys.replace('mainMod .. "', '"SUPER').replace('" .. key', '1-0"').strip('"')
+    act = re.sub(r"\)\s*,\s*\{[^}]*\}$", ")", act)
+    if re.search(r"XF86|mouse", keys):
+        continue
+    act = re.sub(r"\s+", " ", act)
+    print("%s\t%s\t\t" % (keys, act[:46]))
+PY
   ;;
 notifstyle)
   row "DAEMON" "$(busctl --user status org.freedesktop.Notifications >/dev/null 2>&1 && echo running || echo not running)"
   row "STYLE" "NieR: dark title bar, paper body"
   row "SHOWN" "up to 4 at once, top middle"
   row "CRITICAL" "accent red, stays until closed"
+  ;;
+startup)
+  python3 "$(dirname "$0")/startup.py" rows
   ;;
 lockscreen)
   row "LOCKER" "ProjectNier session lock (Lock.qml)"

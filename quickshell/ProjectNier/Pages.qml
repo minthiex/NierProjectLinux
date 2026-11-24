@@ -116,6 +116,7 @@ QtObject {
                 { name: "Lock Screen", desc: "Lock screen appearance" },
                 { name: "Transparency", desc: "Blur and opacity" },
                 { name: "Layout Settings", desc: "Gaps, borders, rounding" },
+                { name: "Startup Apps", desc: "Programs started at login" },
                 { name: "Restore Functions", desc: "Bring back removed sub-functions" }
             ]
         },
