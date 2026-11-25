@@ -295,8 +295,9 @@ hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu))
 hl.bind(mainMod .. " + TAB", hl.dsp.exec_cmd("qs -c ProjectNier ipc call switcher next"))
 hl.bind(mainMod .. " + SHIFT + TAB", hl.dsp.exec_cmd("qs -c ProjectNier ipc call switcher prev"))
--- a left click tells the ProjectNier shell (it hands the keyboard back to a clicked window); the click still goes through
-hl.bind("mouse:272", hl.dsp.exec_cmd("qs -c ProjectNier ipc call focus click"), { non_consuming = true })
+-- a left click tells the ProjectNier shell (it hands the keyboard back to a clicked window); the click still goes through.
+-- On release, not press: moving the keyboard while the button is down made apps miss the release (click acted like a hold).
+hl.bind("mouse:272", hl.dsp.exec_cmd("qs -c ProjectNier ipc call focus click"), { non_consuming = true, release = true })
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))    -- dwindle only
 
