@@ -25,7 +25,7 @@ finds apps, sub-functions and menus.
 ## Install
 
 ```sh
-git clone <this repo> ~/dotfiles
+git clone https://github.com/minthiex/NierProjectLinux.git ~/dotfiles
 cd ~/dotfiles
 ./install.sh --dry-run     # shows what it would do
 ./install.sh
