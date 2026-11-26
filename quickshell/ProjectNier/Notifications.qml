@@ -53,12 +53,17 @@ Scope {
         watchChanges: true                       // "Clear History" rewrites it from outside
         onFileChanged: reload()
         onLoaded: {
-            try { var d = JSON.parse(text()); root.history = Array.isArray(d) ? d : [] } catch (e) { root.history = [] }
+            var t = text()
+            // our own write coming back: notices that arrived since are only in memory, keep them
+            if (root.historyLoaded && t === root.historyWritten) return
+            try { var d = JSON.parse(t); root.history = Array.isArray(d) ? d : [] } catch (e) { root.history = [] }
             root.historyLoaded = true
         }
         onLoadFailed: root.historyLoaded = true  // no file yet
     }
-    Timer { id: historySave; interval: 1500; onTriggered: { historyFile.setText(JSON.stringify(root.history)); historyMode.running = true } }
+    property string historyWritten: ""
+    Timer { id: historySave; interval: 1500
+            onTriggered: { root.historyWritten = JSON.stringify(root.history); historyFile.setText(root.historyWritten); historyMode.running = true } }
     Process { id: historyMode; command: ["chmod", "600", root.historyPath] }
     function plain(s) {
         return String(s || "").replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"")

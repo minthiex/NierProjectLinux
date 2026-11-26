@@ -164,6 +164,7 @@ Item {
             if (authFailed(st, d)) { expire(); return }
             if (st !== 200 || !d) { status = "OFFLINE"; retry.restart(); return }
             since = d.next_batch
+            typingIn = ({})          // a fresh start carries no typing events: a stop missed while offline must not stick
             var join = d.rooms && d.rooms.join ? d.rooms.join : {}
             for (var id in join) {
                 var r = join[id]
