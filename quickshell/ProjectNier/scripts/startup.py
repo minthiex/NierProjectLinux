@@ -249,12 +249,28 @@ def cmd_prune():
     notify("Removed %d switched-off entr%s (kept in %s)." % (len(gone), "y" if len(gone) == 1 else "ies", dest))
 
 
+# programs that only start another one (flatpak run org.x, python3 tool.py ...): for these the arguments say which
+# program it is, else any flatpak / python process (this script itself is one) would count as "already running"
+LAUNCHERS = re.compile(r"^(flatpak|snap|gtk-launch|dex|sh|bash|dash|zsh|fish|java|node|perl|ruby|uv|uvx|appimage-run"
+                       r"|python[0-9.]*)$")
+
+
 def running(cmd):
-    p = program(cmd)
-    if not p:
+    try:
+        words = shlex.split(cmd)
+    except ValueError:
+        words = cmd.split()
+    while words and (words[0] == "env" or "=" in words[0]):
+        words.pop(0)
+    if not words:
         return False
-    return subprocess.run(["pgrep", "-f", "-x", "(.*/)?" + re.escape(os.path.basename(p)) + "( .*)?"],
-                          stdout=subprocess.DEVNULL).returncode == 0
+    base = os.path.basename(words[0])
+    pattern = "(.*/)?" + re.escape(base)
+    if LAUNCHERS.match(base):
+        if len(words) < 2:
+            return False
+        pattern += " " + re.escape(" ".join(words[1:]))
+    return subprocess.run(["pgrep", "-f", "-x", pattern + "( .*)?"], stdout=subprocess.DEVNULL).returncode == 0
 
 
 def cmd_run(now):

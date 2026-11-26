@@ -16,34 +16,45 @@ Item {
     property bool loadingFull: false
     property bool playing: false
 
+    // downloads answer later: by then the chat list may have destroyed this box or reused it for another message.
+    // Each request carries a ticket; a JS object (kept alive by the closure) says whether the box still exists.
+    property var life: ({ alive: true, ticket: 0 })
+    Component.onDestruction: life.alive = false
+    function later(cb) {
+        var l = life, t = ++l.ticket
+        return function (p) { if (l.alive && l.ticket === t) cb(p) }
+    }
+
     function loadPoster() {
         poster = ""; posterFailed = false; videoFile = ""; playing = false; loadingFull = false
         var src = isVideo ? msg.thumb : msg.mxc          // videos need a thumbnail in their metadata
         if (!src) { posterFailed = isVideo ? false : true; return }
         var url = client.mediaUrl(src, 640, 480)
-        client.fetch(url, function (p) { if (p === "") posterFailed = true; else poster = p })
+        client.fetch(url, later(function (p) { if (p === "") root.posterFailed = true; else root.poster = p }))
     }
-    onMsgChanged: loadPoster()
-    Component.onCompleted: loadPoster()
+    // the first msg arrives while the box is being created (onMsgChanged then fires too): load once, when complete
+    property bool ready: false
+    onMsgChanged: if (ready) loadPoster()
+    Component.onCompleted: { ready = true; loadPoster() }
 
     function click() {
         if (isVideo) {
             if (videoFile !== "") { playing = !playing; if (playing) player.play(); else player.pause(); return }
             if (loadingFull) return
             loadingFull = true
-            client.fetch(client.mediaUrl(msg.mxc, 0, 0), function (p) {
-                loadingFull = false
-                if (p === "") { posterFailed = true; return }
-                videoFile = p; playing = true
+            client.fetch(client.mediaUrl(msg.mxc, 0, 0), later(function (p) {
+                root.loadingFull = false
+                if (p === "") { root.posterFailed = true; return }
+                root.videoFile = p; root.playing = true
                 player.play()
-            })
+            }))
         } else {
             if (loadingFull) return
             loadingFull = true
-            client.fetch(client.mediaUrl(msg.mxc, 0, 0), function (p) {
-                loadingFull = false
+            client.fetch(client.mediaUrl(msg.mxc, 0, 0), later(function (p) {
+                root.loadingFull = false
                 if (p !== "") root.enlarge(p)
-            })
+            }))
         }
     }
 

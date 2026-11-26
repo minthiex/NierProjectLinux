@@ -95,7 +95,12 @@ Item {
         command: ["find", root.cacheDir, "-maxdepth", "1", "-type", "f", "(", "-mtime", "+30", "-o", "-name", "*.part.*", "-mmin", "+60", ")", "-delete"]
     }
 
+    // every (re)start of the sync loop gets a new number; answers to requests of an older loop are dropped, so
+    // reconnect() or the watchdog never leave two loops running side by side (each message would come twice)
+    property int loopGen: 0
+
     function stop() {
+        loopGen++
         running = false
         connected = false
         status = "STOPPED"
@@ -152,8 +157,10 @@ Item {
             },
             presence: { types: [] }, account_data: { types: [] }
         }
+        var gen = ++loopGen
+        retry.stop()
         call("GET", "/sync?timeout=0&filter=" + encodeURIComponent(JSON.stringify(filter)), undefined, function (st, d) {
-            if (!running) return
+            if (!running || gen !== loopGen) return
             if (authFailed(st, d)) { expire(); return }
             if (st !== 200 || !d) { status = "OFFLINE"; retry.restart(); return }
             since = d.next_batch
@@ -177,17 +184,17 @@ Item {
             lastOk = Date.now()
             connected = true
             status = "CONNECTED"
-            poll()
+            poll(gen)
         })
     }
 
-    function poll() {
-        if (!running) return
+    function poll(gen) {
+        if (!running || gen !== loopGen) return
         var filter = { room: { timeline: { limit: 20, types: ["m.room.message", "m.sticker"] }, state: { types: [] },
                                ephemeral: { types: [] }, account_data: { types: [] } },
                        presence: { types: [] }, account_data: { types: [] } }
         call("GET", "/sync?timeout=25000&since=" + encodeURIComponent(since) + "&filter=" + encodeURIComponent(JSON.stringify(filter)), undefined, function (st, d) {
-            if (!running) return
+            if (!running || gen !== loopGen) return
             if (authFailed(st, d)) { expire(); return }
             if (st !== 200 || !d) {
                 connected = false
@@ -226,7 +233,7 @@ Item {
                 changed = true
             }
             if (changed) rebuild()
-            poll()
+            poll(gen)
         }, 45000)
     }
 
@@ -243,7 +250,7 @@ Item {
             }
         }
     }
-    Timer { id: retry; interval: 5000; onTriggered: { if (root.running) { if (root.since === "") root.firstSync(); else root.poll() } } }
+    Timer { id: retry; interval: 5000; onTriggered: { if (root.running) { if (root.since === "") root.firstSync(); else root.poll(root.loopGen) } } }
 
     // the bridge's own chat is hidden, except while Facebook has logged the bridge out (Health.qml): send it "login" there
     property bool showBridge: false

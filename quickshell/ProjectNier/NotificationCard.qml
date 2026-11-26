@@ -19,9 +19,9 @@ Item {
     function sendReply() {
         var t = replyInput.text.trim()
         if (t === "") return
-        note.sendInlineReply(t)
         replying = false
-        close()
+        var n = note
+        act(function () { n.sendInlineReply(t) })
     }
 
     readonly property bool urgent: note.urgency === NotificationUrgency.Critical
@@ -36,6 +36,14 @@ Item {
         if (leaving) return
         leaving = true
         wipeOut.start()
+    }
+    // a button / the card was clicked: leave first, take the action at the end of the wipe. Invoking an action
+    // dismisses the notification, which destroys this card at once, so nothing of the card may run after it.
+    property var pendingAction: null     // a NotificationAction or a function
+    function act(a) {
+        if (leaving) return
+        pendingAction = a
+        close()
     }
 
     // ---- appear / disappear --------------------------------------------------------------
@@ -63,7 +71,7 @@ Item {
             NumberAnimation { target: root; property: "opacity"; to: 0; duration: Theme.hoverMs }
             NumberAnimation { target: slide; property: "y"; to: -12; duration: Theme.hoverMs; easing.type: Easing.InCubic }
         }
-        ScriptAction { script: { root.finished() } }
+        ScriptAction { script: { var a = root.pendingAction; root.finished(); if (typeof a === "function") a(); else if (a) a.invoke() } }
     }
 
     // timer: when it runs out the card leaves by itself
@@ -187,9 +195,9 @@ Item {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    var acts = root.note.actions
-                    for (var i = 0; i < acts.length; i++) if (acts[i].identifier === "default") { acts[i].invoke(); break }
-                    root.close()
+                    var acts = root.note.actions, def = null
+                    for (var i = 0; i < acts.length; i++) if (acts[i].identifier === "default") { def = acts[i]; break }
+                    root.act(def)
                 }
             }
         }
@@ -259,7 +267,7 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: { ab.modelData.invoke(); root.close() }
+                        onClicked: root.act(ab.modelData)
                     }
                 }
             }

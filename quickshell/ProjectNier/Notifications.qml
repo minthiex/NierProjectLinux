@@ -38,6 +38,8 @@ Scope {
         }
     }
 
+    function expireNote(n) { if (n) n.expire() }
+
     // newest on top, a few at a time (older ones wait until there is room)
     readonly property var visibleNotes: {
         var all = server.trackedNotifications.values
@@ -67,17 +69,20 @@ Scope {
             spacing: 8
 
             Repeater {
-                model: root.visibleNotes
+                // a ScriptModel keeps the cards that stay (a plain array would rebuild every card on each new notice:
+                // a reply being typed would be lost and every countdown would start over)
+                model: ScriptModel { values: root.visibleNotes }
 
                 NotificationCard {
                     required property var modelData
                     note: modelData
                     onReplyingChanged: root.replying = Math.max(0, root.replying + (replying ? 1 : -1))
+                    // counted down here (not in onFinished): a card can also go away with its reply field open
+                    // (the sender closed the notice), and a count left behind would keep the keyboard grabbed
+                    Component.onDestruction: if (replying) root.replying = Math.max(0, root.replying - 1)
                     onFinished: {
-                        if (replying) root.replying = Math.max(0, root.replying - 1)
-                        var n = modelData
                         visible = false                       // stop drawing before the notification object goes away
-                        Qt.callLater(function () { n.expire() })
+                        Qt.callLater(root.expireNote, modelData)
                     }
                 }
             }

@@ -91,7 +91,7 @@ Item {
         })
         current = p
         p.running = true
-        p.destroy(20000)
+        p.destroy(90000)           // slow ones (checkupdates on a slow mirror, the self check) need well over 20 s
     }
 
     function accept(g, text) {
@@ -103,7 +103,7 @@ Item {
             var c = lines[i].split("\t")
             out.push([c[0] ? c[0] : "", c[1] ? c[1] : "",
                       (c.length > 2 && c[2] !== "") ? Number(c[2]) : -1,
-                      c.length > 3 ? c[3] : ""])
+                      c.length > 3 ? c.slice(3).join("\t") : ""])     // the click command may hold a quoted TAB
         }
         rows = out
     }

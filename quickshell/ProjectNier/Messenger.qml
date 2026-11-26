@@ -222,13 +222,15 @@ Item {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             spacing: 6
-            model: client.messages.length
+            // a ScriptModel adds a delegate for each new message and keeps the others (a count model rebuilt every
+            // bubble on each message: pictures were fetched again and a playing video stopped)
+            model: ScriptModel { values: client.messages }
             onCountChanged: Qt.callLater(function () { msgList.positionViewAtEnd() })
 
             delegate: Item {
                 id: msg
-                required property int index
-                readonly property var d: client.messages[index] ? client.messages[index] : ({ body: "", mine: false, name: "", ts: 0, kind: "text" })
+                required property var modelData
+                readonly property var d: modelData ? modelData : ({ body: "", mine: false, name: "", ts: 0, kind: "text" })
                 readonly property real maxW: width * 0.72
 
                 width: ListView.view.width

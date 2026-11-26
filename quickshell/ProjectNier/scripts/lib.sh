@@ -9,7 +9,19 @@ bridge_dir() {
   else printf '%s' "$HOME/.local/share/projectnier/messenger-bridge"; fi
 }
 mkdir -p "$D"
-row() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "${3:-}" "${4:-}"; }
+# a TAB or newline in a shown text (a file name from an archive ...) would shift the columns and put part of the name
+# in the click column, where it runs as a command: the shown texts lose them
+TAB=$(printf '\t')
+NL='
+'
+row() {
+  k=$1 v=$2
+  case "$k$v${3:-}" in *"$TAB"*|*"$NL"*)
+    k=$(printf '%s' "$k" | tr '\t\n' '  '); v=$(printf '%s' "$v" | tr '\t\n' '  ')
+    set -- "$k" "$v" "$(printf '%s' "${3:-}" | tr -d '\t\n')" "${4:-}" ;;
+  esac
+  printf '%s\t%s\t%s\t%s\n' "$k" "$v" "${3:-}" "${4:-}"
+}
 blank() { printf '\t\t\t\n'; }
 # q <text>: the text as one single-quoted shell word (safe to put in a click command that runs with sh -c)
 q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
