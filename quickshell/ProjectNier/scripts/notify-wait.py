@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """usage: notify-wait.py --app NAME --summary TEXT [--body MARKUP] [--icon NAME]
                          [--action KEY=LABEL ...] [--reply PLACEHOLDER] [--timeout MIN]
+                         [--replaces ID] [--print-id]
 Sends one desktop notification with buttons (and, with --reply, an inline reply field: NotificationCard's REPLY) and
 waits for the answer, then prints one JSON line and exits:
   {"action": "KEY"}  a button (or, for KEY "default", the card itself) was clicked
   {"reply": "TEXT"}  a reply was sent
   {"closed": N}      the notice went away without an answer (expired, closed); also after --timeout minutes
+--replaces ID updates notice ID in place (Messenger: one notice per chat); --print-id first prints {"id": N} as soon
+as the notice is up (the caller needs it for --replaces).
 The shell's own notification daemon (Notifications.qml) shows it, so do-not-disturb applies as usual."""
 import argparse
 import json
@@ -27,6 +30,8 @@ def main():
     ap.add_argument("--action", action="append", default=[])
     ap.add_argument("--reply", default=None)
     ap.add_argument("--timeout", type=float, default=15)
+    ap.add_argument("--replaces", type=int, default=0)
+    ap.add_argument("--print-id", action="store_true")
     a = ap.parse_args()
 
     actions = []
@@ -69,12 +74,15 @@ def main():
 
     try:
         r = bus.call_sync(BUS, PATH, IFACE, "Notify",
-                          GLib.Variant("(susssasa{sv}i)", (a.app, 0, a.icon, a.summary, a.body, actions, hints, -1)),
+                          GLib.Variant("(susssasa{sv}i)", (a.app, a.replaces, a.icon, a.summary, a.body, actions, hints, -1)),
                           GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, 10000, None)
     except GLib.Error as e:
         print(json.dumps({"error": e.message}))
         return
     state["id"] = r.unpack()[0]
+    if a.print_id:
+        print(json.dumps({"id": state["id"]}))
+        sys.stdout.flush()
     for name, args in state["early"]:
         handle(name, args)
     GLib.timeout_add_seconds(int(a.timeout * 60), lambda: finish({"closed": 0}) or False)

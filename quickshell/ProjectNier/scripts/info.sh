@@ -144,6 +144,7 @@ notifications)
   row "DO NOT DISTURB" "$( [ -f "$D/dnd" ] && echo ON || echo OFF)"
   row "WHERE" "top middle, above windows"
   row "KINDS" "apps, Messenger, notify-send"
+  python3 -I "$(dirname "$0")/notices.py" rows
   ;;
 signal)
   g=$(ip route | awk '/default/{print $3; exit}')

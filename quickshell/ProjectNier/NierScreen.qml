@@ -156,7 +156,8 @@ Item {
         onIncoming: (account, from, subject, uid) => root.notifyWithButtons("email", account, uid, [
             "--app", "Email", "--icon", "mail-unread",
             "--summary", from + (accounts.length > 1 ? "  ·  " + account.replace(/@.*/, "") : ""),
-            "--body", root.markupSafe(subject), "--action", "default=Open", "--action", "open=Open"])
+            "--body", root.markupSafe(subject), "--action", "default=Open", "--action", "open=Open",
+            "--action", "seen=Mark Read", "--action", "trash=Delete"])
     }
     readonly property int mailUnread: mail.totalUnread
     // health light (top right): Messenger, its bridge and mail; one notice when something breaks
@@ -188,11 +189,31 @@ Item {
     }
     Connections {
         target: matrix
+        // one notice per chat: a new message while the chat's notice is still up updates that notice ("3 new
+        // messages") instead of stacking another card; the waiter of the old one is stopped (both would get the answer)
         function onIncoming(room, text, roomId) {
-            root.notifyWithButtons("messenger", "", roomId, ["--app", "Messenger", "--icon", "mail-unread",
-                "--summary", room, "--body", root.markupSafe(text), "--action", "default=Open", "--action", "open=Open",
-                "--reply", "Reply to " + room])
+            var prev = root.roomNotices[roomId]
+            if (prev && prev.id === 0) prev = null       // its notice is not up yet: this one gets its own
+            var count = prev ? prev.count + 1 : 1
+            var body = (count > 1 ? "<b>" + count + " new messages</b>  ·  " : "") + root.markupSafe(text)
+            var args = ["--app", "Messenger", "--icon", "mail-unread", "--summary", room, "--body", body,
+                        "--action", "default=Open", "--action", "open=Open", "--reply", "Reply to " + room, "--print-id"]
+            if (prev) args = args.concat(["--replaces", String(prev.id)])
+            if (prev) prev.proc.superseded = true
+            var p = root.notifyWithButtons("messenger", "", roomId, args)
+            p.supersedes = prev ? prev.proc : null
+            var m = Object.assign({}, root.roomNotices)
+            m[roomId] = { proc: p, id: prev ? prev.id : 0, count: count }
+            root.roomNotices = m
         }
+    }
+    property var roomNotices: ({})        // room id -> { proc, id, count } while its notice is up
+    function forgetRoomNotice(roomId, proc) {
+        var cur = roomNotices[roomId]
+        if (!cur || (proc && cur.proc !== proc)) return
+        var m = Object.assign({}, roomNotices)
+        delete m[roomId]
+        roomNotices = m
     }
     // ---- notices with buttons (scripts/notify-wait.py waits for the answer while the card is up) ----
     // kind: messenger (ref = room id; OPEN shows the chat, REPLY sends into it) | email (account + ref = uid; OPEN shows it)
@@ -200,6 +221,7 @@ Item {
         var p = noticeComp.createObject(root, { kind: kind, account: account, ref: ref,
                                                 command: ["python3", "-I", Panes.script("notify-wait.py")].concat(args) })
         p.running = true
+        return p
     }
     Component {
         id: noticeComp
@@ -208,13 +230,31 @@ Item {
             property string kind
             property string account
             property string ref
-            stdout: StdioCollector {
-                onStreamFinished: {
-                    var d = {}
-                    try { d = JSON.parse(text) } catch (e) {}
+            property bool superseded: false       // a newer notice of the same chat took this one over
+            property var supersedes: null         // the waiter this one replaces: stopped once this notice is up
+            property bool answered: false
+            stdout: SplitParser {
+                onRead: line => {
+                    var d = null
+                    try { d = JSON.parse(line) } catch (e) { return }
+                    if (d.id !== undefined) {                  // --print-id: the notice is up
+                        if (np.kind === "messenger" && root.roomNotices[np.ref] && root.roomNotices[np.ref].proc === np) {
+                            var m = Object.assign({}, root.roomNotices)
+                            m[np.ref] = Object.assign({}, m[np.ref], { id: d.id })
+                            root.roomNotices = m
+                        }
+                        if (np.supersedes) { np.supersedes.running = false; np.supersedes = null }
+                        return
+                    }
+                    if (np.superseded || np.answered) return
+                    np.answered = true
+                    if (np.kind === "messenger") root.forgetRoomNotice(np.ref, np)
                     root.noticeAnswered(np.kind, np.account, np.ref, d)
-                    np.destroy(100)
                 }
+            }
+            onExited: {
+                if (np.kind === "messenger" && !np.superseded) root.forgetRoomNotice(np.ref, np)
+                np.destroy(100)
             }
         }
     }
@@ -224,6 +264,7 @@ Item {
             if (d.reply !== undefined) matrix.sendTo(ref, d.reply)
             else if (open) showMessengerChat(ref)
         } else if (kind === "email" && open) showEmailMessage(account, ref)
+        else if (kind === "email" && (d.action === "seen" || d.action === "trash")) mail.noticeAction(account, ref, d.action)
     }
     // like the Bluetooth agent: the built-in app goes to its usual sub-function unless it already lives somewhere
     function showMessengerChat(roomId) {
@@ -1202,7 +1243,93 @@ Item {
     // ---- application search (top left) ---------------------------------------------------------------
     // what the search box finds: apps, sub-functions and menus (AppSearch.qml)
     AppSearch { id: finder; pages: root.basePages }
+    // which sub-function each app's window goes to, for Configuration → Startup Apps (scripts/startup.py reads it):
+    // written at start and whenever apps are assigned
+    FileView { id: homesFile; path: Panes.dataDir + "/homes.json"; printErrors: false }
+    Timer { id: homesWrite; interval: 2000; running: true
+            onTriggered: homesFile.setText(JSON.stringify(finder.mappedApps().map(m => ({ bin: m.bin, cls: m.cls, key: m.key })))) }
+    Connections { target: Registry; function onAppsChanged() { homesWrite.restart() } }
+    // ---- calculator / converter and run-a-command in the search box ----
+    //   2+3*4 · sqrt(2) · = any qalc expression · 10 km to mi · 100 f to c · 3.5 GiB in MB · 100 USD to EUR
+    //   > command    runs it in Console → Terminal
+    property var calcItem: null             // { q, name, value, kind: "calc", loc }
+    function calcPlan(q) {
+        if (q.charAt(0) === "=") return q.length > 1 ? { expr: q.substring(1), mode: "free" } : null
+        if (/^[\d\s.,+\-*\/^()%]+$/.test(q) && /\d/.test(q) && /\d\s*[+\-*\/^%]\s*[\d(]|^\(/.test(q)) return { expr: q, mode: "number", unit: "" }
+        if (/^(sqrt|cbrt|sin|cos|tan|asin|acos|atan|log|ln|exp|abs|round|floor|ceil)\s*\([\d\s.,+\-*\/^()%]*\d[\d\s.,+\-*\/^()%]*\)$/i.test(q))
+            return { expr: q, mode: "number", unit: "" }
+        var m = /^(-?[\d.,]+)\s*([^\d\s][^]*?)\s+(?:to|in|as)\s+(\S[^]*)$/i.exec(q)
+        if (!m) return null
+        var temp = { c: "°C", f: "°F", k: "K", celsius: "°C", fahrenheit: "°F", kelvin: "K" }
+        var from = m[2].replace(/^°/, "").toLowerCase(), to = m[3].replace(/^°/, "").toLowerCase()
+        if (temp[from] && temp[to]) return { expr: m[1] + " " + temp[from] + " to " + temp[to], mode: "free" }
+        // a ratio gives a plain number (qalc's own "to" answers in mixed units: 6 mi + 376 yd + ...)
+        return { expr: "(" + m[1] + " " + m[2] + ")/(1 " + m[3] + ")", mode: "number", unit: " " + m[3] }
+    }
+    Connections {
+        target: search
+        function onTextChanged() {
+            var q = search.text.trim()
+            if (root.calcItem && root.calcItem.q !== q) root.calcItem = null
+            calcProc.running = false
+            if (root.calcPlan(q)) calcDelay.restart(); else calcDelay.stop()
+        }
+    }
+    Timer {
+        id: calcDelay
+        interval: 200
+        onTriggered: {
+            var q = search.text.trim(), plan = root.calcPlan(q)
+            if (!plan) return
+            calcProc.q = q; calcProc.plan = plan
+            calcProc.command = ["qalc", "-t", plan.expr]
+            calcProc.running = true
+        }
+    }
+    Process {
+        id: calcProc
+        property string q
+        property var plan
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (calcProc.q !== search.text.trim()) return
+                var lines = text.split("\n").map(l => l.trim()).filter(l => l !== "")
+                var out = lines.length > 0 ? lines[lines.length - 1] : ""
+                if (out === "" || /error|warning|did you mean|unrecognized/i.test(text)) return
+                var plan = calcProc.plan
+                if (plan.mode === "number") {
+                    if (!/^[\-−]?[\d.,]+(E[−\-+]?\d+)?$/.test(out)) return       // words, units left over: not an answer
+                    out = out.replace("−", "-") + plan.unit
+                } else if (out.replace(/\s/g, "") === plan.expr.replace(/\s/g, "")) return
+                root.calcItem = { q: calcProc.q, name: "= " + out, value: out, kind: "calc", key: "", loc: "" }
+            }
+        }
+    }
+    function searchResults(text) {
+        var q = text.trim(), out = []
+        if (/^>\s*\S/.test(q)) {
+            var cmd = q.replace(/^>\s*/, "")
+            out.push({ name: cmd, cmd: cmd, kind: "run", key: "", loc: "" })
+        }
+        if (calcItem && calcItem.q === q) out.push(calcItem)
+        return out.concat(finder.search(text)).slice(0, 10)
+    }
+
     function searchPick(it) {
+        if (it.kind === "calc") {
+            Quickshell.execDetached(["wl-copy", "--", it.value])
+            Quickshell.execDetached(["notify-send", "-a", "Calculator", "-t", "2000", "Copied", root.markupSafe(it.value)])
+            return
+        }
+        if (it.kind === "run") {
+            var key = "Console/Terminal"
+            for (var r = 0; r < pages.length; r++) if (pages[r].label === "Console") { page = r; break }
+            if (!specOf(key)) return
+            pane = key
+            focusUntil = Date.now() + 8000
+            openInContent(it.cmd, ["sh", "-c", it.cmd + "; printf '\\n[%s] press Enter to close' \"$?\"; read -r _"])
+            return
+        }
         if (it.key !== "") {
             var p = it.key.split("/")
             for (var i = 0; i < pages.length; i++) if (pages[i].label === p[0]) { page = i; break }
@@ -1226,7 +1353,7 @@ Item {
         x: Theme.frameMargin + Theme.tabInset
         y: Theme.frameMargin + Theme.pad
         z: 50
-        results: finder.search(search.text)
+        results: root.searchResults(search.text)
         onPicked: item => root.searchPick(item)
     }
 

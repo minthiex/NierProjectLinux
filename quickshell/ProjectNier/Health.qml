@@ -85,14 +85,41 @@ Scope {
         return p
     }
     readonly property bool ok: problems.length === 0
-    readonly property string summary: ok ? "ALL SYSTEMS NOMINAL" : problems[0] + (problems.length > 1 ? "  +" + (problems.length - 1) : "")
-    onOkChanged: if (!ok) broke(problems.join(", "))
+    readonly property string summary: ok ? "ALL SYSTEMS NOMINAL" : repairing ? "SELF-REPAIR RUNNING"
+                                    : problems[0] + (problems.length > 1 ? "  +" + (problems.length - 1) : "")
+
+    // ---- self-repair: a breakdown first gets one automatic run of scripts/repair.sh; the notice only comes if that
+    // did not help after 90 s. Logins (expired, logged out, refused, locked keyring) need you: they are announced at once.
+    // At most one automatic repair per 30 minutes.
+    property bool repairing: false
+    property double lastAutoRepair: 0
+    function needsYou(p) { return /LOGIN|LOGGED OUT|KEYRING/.test(p) }
+    onOkChanged: {
+        if (ok) return
+        if (problems.every(needsYou) || Date.now() - lastAutoRepair < 1800000) { broke(problems.join(", ")); return }
+        lastAutoRepair = Date.now()
+        repairing = true
+        autoRepair.running = true
+    }
+    Process {
+        id: autoRepair
+        command: ["sh", Quickshell.shellPath("scripts/repair.sh")]
+        onExited: { h.now = Date.now(); repairCheck.restart() }
+    }
+    Timer {
+        id: repairCheck
+        interval: 90000
+        onTriggered: {
+            h.repairing = false
+            if (!h.ok) h.broke(h.problems.join(", ") + " (the automatic repair did not fix it)")
+        }
+    }
 
     Component.onCompleted: { trackMsg(); trackMail() }
 
     IpcHandler {
         target: "health"
-        function status(): string { return h.ok ? "OK" : h.problems.join(", ") }
+        function status(): string { return h.ok ? "OK" : (h.repairing ? "REPAIRING: " : "") + h.problems.join(", ") }
         // what the light is looking at:   messenger=CONNECTED mail=CONNECTED fbtui-synapse=up fbtui-meta=up
         function detail(): string {
             return "messenger=" + (h.matrix ? h.matrix.status : "?") + " mail=" + (h.mail ? h.mail.status : "?") +

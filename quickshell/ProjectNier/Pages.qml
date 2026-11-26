@@ -75,7 +75,8 @@ QtObject {
                 { name: "Bookmarks", desc: "Favorite directories" },
                 { name: "External Storage", desc: "USB and mounted drives" },
                 { name: "Trash", desc: "Deleted files" },
-                { name: "Compressed Files", desc: "Archive management" }
+                { name: "Compressed Files", desc: "Archive management" },
+                { name: "Clipboard", desc: "Copy history: click an entry to copy it again" }
             ]
         },
         {
@@ -140,7 +141,8 @@ QtObject {
                 { name: "Notifications", desc: "Notification settings" },
                 { name: "Session Manager", desc: "Desktop session controls" },
                 { name: "Resource Status", desc: "CPU, RAM and GPU status" },
-                { name: "Self Check", desc: "Is this screen healthy? Panes, scripts, log, bridge" }
+                { name: "Self Check", desc: "Is this screen healthy? Panes, scripts, log, bridge" },
+                { name: "Backups", desc: "Daily copies of the settings outside the dotfiles repo" }
             ]
         },
         {

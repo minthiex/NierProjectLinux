@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtMultimedia
 
@@ -56,6 +57,25 @@ Item {
                 if (p !== "") root.enlarge(p)
             }))
         }
+    }
+
+    // the video in its own player window (the default player; the screen floats it as a pop-out when another
+    // video already plays): downloaded first if needed
+    function popOut() {
+        if (!isVideo) return
+        if (videoFile !== "") {
+            if (playing) { playing = false; player.pause() }
+            Quickshell.execDetached(["xdg-open", videoFile])
+            return
+        }
+        if (loadingFull) return
+        loadingFull = true
+        client.fetch(client.mediaUrl(msg.mxc, 0, 0), later(function (p) {
+            root.loadingFull = false
+            if (p === "") { root.posterFailed = true; return }
+            root.videoFile = p
+            Quickshell.execDetached(["xdg-open", p])
+        }))
     }
 
     // ground
@@ -132,5 +152,25 @@ Item {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
         onClicked: root.click()
+    }
+
+    // POP OUT (videos): top right corner, over the click area
+    Rectangle {
+        visible: root.isVideo && !root.posterFailed
+        anchors.right: parent.right
+        anchors.top: parent.top
+        width: popText.implicitWidth + 14
+        height: 20
+        color: popHit.containsMouse ? Theme.ink : Theme.paperDark
+        Text {
+            id: popText
+            anchors.centerIn: parent
+            text: "POP OUT"
+            color: popHit.containsMouse ? Theme.paper : Theme.ink
+            font.family: Theme.font
+            font.pixelSize: Theme.smallFontSize
+            font.letterSpacing: 1
+        }
+        MouseArea { id: popHit; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.popOut() }
     }
 }

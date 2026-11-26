@@ -74,8 +74,21 @@ Item {
         ScriptAction { script: { var a = root.pendingAction; root.finished(); if (typeof a === "function") a(); else if (a) a.invoke() } }
     }
 
+    // the sender updated the notice (Messenger: another message in the same chat): count down from the start again
+    Connections {
+        target: root.note
+        function onBodyChanged() { root.restartLife() }
+        function onSummaryChanged() { root.restartLife() }
+    }
+    function restartLife() {
+        if (leaving || replying || seconds <= 0) return
+        lifeTimer.restart()
+        lifeAnim.restart()
+    }
+
     // timer: when it runs out the card leaves by itself
     Timer {
+        id: lifeTimer
         running: root.seconds > 0 && !root.replying
         interval: root.seconds * 1000
         onTriggered: root.close()

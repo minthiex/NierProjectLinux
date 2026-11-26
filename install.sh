@@ -15,13 +15,13 @@ done_() { [ "$DRY" = 1 ] || say "$*"; }          # report a change only when it 
 # ---- what is needed --------------------------------------------------------------------------------------------
 say ":: checking programs"
 need=(Hyprland qs kitty jq python3 curl nmcli bluetoothctl wpctl pactl playerctl powerprofilesctl grim slurp wl-copy notify-send dolphin)
-want=(docker hyprsunset gwenview chromium firefox keepassxc secret-tool btop)
+want=(docker hyprsunset gwenview chromium firefox keepassxc secret-tool btop cliphist qalc)
 missing=(); for p in "${need[@]}"; do command -v "$p" >/dev/null 2>&1 || missing+=("$p"); done
 optional=(); for p in "${want[@]}"; do command -v "$p" >/dev/null 2>&1 || optional+=("$p"); done
 python3 -c 'import gi; gi.require_version("Gio", "2.0")' 2>/dev/null || missing+=("python-gobject")
 fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd" || missing+=("JetBrainsMono Nerd Font")
 if [ ${#missing[@]} -gt 0 ]; then say "   missing (the shell needs these): ${missing[*]}"; else say "   all required programs found"; fi
-[ ${#optional[@]} -gt 0 ] && say "   optional, not found: ${optional[*]}  (docker: Messenger; keepassxc/secret-tool: mail passwords in a keyring)"
+[ ${#optional[@]} -gt 0 ] && say "   optional, not found: ${optional[*]}  (docker: Messenger; keepassxc/secret-tool: mail passwords in a keyring; cliphist: clipboard history; qalc: calculator in the search box)"
 
 # ---- links -----------------------------------------------------------------------------------------------------
 # link <target in repo> <path in home>: an existing link to the same place is left alone, anything else moved aside

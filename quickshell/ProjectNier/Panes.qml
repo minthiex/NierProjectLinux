@@ -221,7 +221,13 @@ QtObject {
         "Archive/Pictures": dirSpec(home + "/Pictures"),
         "Archive/Videos": dirSpec(home + "/Videos"),
         "Archive/Music": dirSpec(home + "/Music"),
-        "Archive/Screenshots": dirSpec(home + "/Pictures/Screenshots"),
+        // capture: saved here and put on the clipboard (scripts/shot.sh); the list shows the newest
+        "Archive/Screenshots": Object.assign(dirSpec(home + "/Pictures/Screenshots"), { delay: 1500,
+            actions: [
+                { label: "Capture Area", cmd: sh("shot.sh", ["area"]), quiet: true },
+                { label: "Capture Window", cmd: sh("shot.sh", ["window"]), quiet: true },
+                { label: "Capture Screen", cmd: sh("shot.sh", ["screen"]), quiet: true }
+            ] }),
         "Archive/Recent Files": { script: "info.sh", args: ["recent"], interval: 15000 },
         "Archive/Bookmarks": { script: "info.sh", args: ["places"], interval: 15000 },
         "Archive/External Storage": {
@@ -232,6 +238,10 @@ QtObject {
             actions: [
                 { label: "Empty Trash", cmd: ["sh", "-c", "rm -rf \"$HOME\"/.local/share/Trash/files/* \"$HOME\"/.local/share/Trash/info/*"], quiet: true, confirm: true }
             ]
+        },
+        "Archive/Clipboard": { delay: 0,
+            script: "clip.sh", args: ["rows"], interval: 3000,
+            actions: [{ label: "Clear History", cmd: sh("clip.sh", ["wipe"]), quiet: true, confirm: true }]
         },
         "Archive/Compressed Files": {
             script: "info.sh", args: ["compressed"], interval: 15000
@@ -402,13 +412,24 @@ QtObject {
         "System/USB Devices": { script: "info.sh", args: ["usb"], interval: 6000 },
         "System/Language": { script: "info.sh", args: ["language"], interval: 0 },
         "System/Date & Time": { script: "info.sh", args: ["datetime"], interval: 5000 },
-        "System/Notifications": { script: "info.sh", args: ["notifications"], interval: 5000 },
+        // ◆ = held back by do-not-disturb (Notifications.qml keeps the last 100 in notices.json)
+        "System/Notifications": { script: "info.sh", args: ["notifications"], interval: 5000, delay: 0,
+            actions: [
+                { label: "Toggle Do Not Disturb", cmd: sh("toggle-dnd.sh", []), quiet: true },
+                { label: "Clear History", cmd: ["python3", "-I", script("notices.py"), "clear"], quiet: true, confirm: true }
+            ] },
         "System/Session Manager": { script: "info.sh", args: ["session"], interval: 8000 },
         "System/Resource Status": { script: "monitor.sh", interval: 2000 },
         // runs every pane script once (takes ~12 s): only when opened or refreshed by hand
         "System/Self Check": { script: "selfcheck.sh", interval: 0,
             // the standard fixes for what the health light (top right) watches; the check runs again when it is done
             actions: [{ label: "Repair", cmd: sh("repair.sh"), quiet: true, delay: 0, confirm: true }] },
+
+        "System/Backups": { script: "backup.sh", args: ["rows"], interval: 0, delay: 300,
+            actions: [
+                { label: "Back Up Now", cmd: sh("backup.sh", ["now"]), quiet: true },
+                { label: "Open Backups Folder", cmd: dolphin(home + "/backups/auto") }
+            ] },
 
         // ================================================================ LOGOUT
         "Logout/Lock Unit": {

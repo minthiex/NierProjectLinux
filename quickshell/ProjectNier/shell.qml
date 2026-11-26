@@ -12,6 +12,19 @@ ShellRoot {
     Idle { onLockRequested: lock.lockNow() }
     // Configuration -> Startup Apps: start the switched-on apps of ~/.config/autostart, once per Hyprland session
     Process { running: true; command: ["python3", Quickshell.shellPath("scripts/startup.py"), "run"] }
+    // Archive → Clipboard: one detached `wl-paste --watch cliphist store` (a child of the shell would race the live
+    // reload: the new config starts before the old one's children are killed); checked again every 5 minutes
+    Timer {
+        interval: 300000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: Quickshell.execDetached(["sh", "-c", "command -v cliphist >/dev/null || exit 0; " +
+            "pgrep -x -f 'wl-paste --watch cliphist store' >/dev/null || exec wl-paste --watch cliphist store"])
+    }
+
+    // System → Backups: a copy of the settings outside the dotfiles repo once a day (scripts/backup.sh)
+    Timer {
+        interval: 3600000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: Quickshell.execDetached(["sh", Quickshell.shellPath("scripts/backup.sh"), "auto"])
+    }
 
     Variants {
         model: Quickshell.screens

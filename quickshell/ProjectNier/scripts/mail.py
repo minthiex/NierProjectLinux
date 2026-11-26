@@ -346,9 +346,42 @@ def cmd_get(uid):
 
 
 def cmd_seen(uid):
+    if not uid.isdigit():
+        fail("bad uid")
     addr, pw = load_cfg()
     m = imap_open(addr, pw, readonly=False)
     m.uid("STORE", uid, "+FLAGS", "(\\Seen)")
+    m.logout()
+    out({"ok": True})
+
+
+def trash_folder(m):
+    """the mailbox marked \\Trash (Gmail names it in the account's language: [Gmail]/Trash, [Gmail]/Papierkorb ...)"""
+    typ, data = m.list()
+    for line in data or []:
+        if not isinstance(line, bytes):
+            continue
+        mt = re.match(rb'\((?P<flags>[^)]*)\) (?:"[^"]*"|NIL) (?P<name>.+)$', line)
+        if mt and b"\\Trash" in mt.group("flags"):
+            return mt.group("name").decode("utf-8", "replace")
+    return '"[Gmail]/Trash"'
+
+
+def cmd_trash(uid):
+    """move one message of the inbox to the trash (Gmail empties it after 30 days)"""
+    if not uid.isdigit():
+        fail("bad uid")
+    addr, pw = load_cfg()
+    m = imap_open(addr, pw, readonly=False)
+    folder = trash_folder(m)
+    typ, _ = m.uid("MOVE", uid, folder)
+    if typ != "OK":                       # no MOVE: copy, then flag and expunge
+        typ, _ = m.uid("COPY", uid, folder)
+        if typ != "OK":
+            m.logout()
+            fail("could not move the message to " + folder)
+        m.uid("STORE", uid, "+FLAGS", "(\\Deleted)")
+        m.expunge()
     m.logout()
     out({"ok": True})
 
@@ -469,6 +502,8 @@ def main():
             cmd_get(a[1])
         elif c == "seen" and len(a) > 1:
             cmd_seen(a[1])
+        elif c == "trash" and len(a) > 1:
+            cmd_trash(a[1])
         elif c == "send":
             cmd_send()
         elif c == "setup":

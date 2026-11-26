@@ -43,7 +43,7 @@ Item {
 
         Text {
             visible: field.text === "" && !field.activeFocus
-            text: "SEARCH APPS & FUNCTIONS"
+            text: "SEARCH  ·  = CALC  ·  > RUN"
             color: Theme.inkSoft
             font.family: Theme.font
             font.pixelSize: Theme.smallFontSize + 1
@@ -92,7 +92,7 @@ Item {
                     Rectangle { anchors.fill: parent; color: row.lit ? Theme.ink : Theme.paper }
                     // a sub-function or a menu (not an app): a small square in front, like the menu's own items
                     Rectangle {
-                        visible: row.modelData.kind === "function" || row.modelData.kind === "menu"
+                        visible: !!row.modelData.kind
                         x: 12
                         anchors.verticalCenter: parent.verticalCenter
                         width: 7; height: 7
@@ -115,10 +115,12 @@ Item {
                         width: parent.width * 0.5 - 30
                         horizontalAlignment: Text.AlignRight
                         elide: Text.ElideLeft
-                        text: row.modelData.kind === "menu" ? "MENU"
+                        text: row.modelData.kind === "calc" ? "ENTER COPIES"
+                            : row.modelData.kind === "run" ? "RUN IN TERMINAL"
+                            : row.modelData.kind === "menu" ? "MENU"
                             : row.modelData.kind === "function" ? "FUNCTION · " + row.modelData.loc.toUpperCase()
                             : row.modelData.loc !== "" ? row.modelData.loc.toUpperCase() : "NOT IN A CATEGORY"
-                        color: row.lit ? Theme.paper : (row.modelData.loc !== "" ? Theme.inkSoft : Theme.accent)
+                        color: row.lit ? Theme.paper : (row.modelData.loc !== "" || row.modelData.kind ? Theme.inkSoft : Theme.accent)
                         font.family: Theme.font
                         font.pixelSize: Theme.smallFontSize
                         font.letterSpacing: 1

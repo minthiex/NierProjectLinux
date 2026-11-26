@@ -3,6 +3,7 @@
 
   startup.py rows            panel rows (key TAB value TAB percent TAB click)
   startup.py toggle <file>   switch one entry on / off
+  startup.py delay <file>    next start delay: 0, 4, 10, 30, 60 s, then 0 again
   startup.py add <text>      add an installed app (desktop id, name or command name) or a plain command
   startup.py prune           move the switched-off entries to ~/.local/share/ProjectNier/autostart-removed/
   startup.py run [--now]     start the switched-on entries; without --now only once per Hyprland session
@@ -135,16 +136,52 @@ def entries():
     return out
 
 
+DELAYS = [0, 4, 10, 30, 60]
+
+
+def delay_of(e):
+    d = e.get("X-GNOME-Autostart-Delay", "")
+    return int(d) if d.isdigit() else DEFAULT_DELAY
+
+
+def class_key(c):
+    c = str(c).lower()
+    return c.rsplit(".", 1)[-1] if c.count(".") >= 2 else c
+
+
+def homes():
+    """[{bin, cls, key}]: the sub-function each app's window goes to (written by the shell, NierScreen.qml)"""
+    try:
+        import json
+        with open(os.path.join(DATA, "homes.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+def home_of(e, cmd, hs):
+    prog = os.path.basename(program(cmd)).lower()
+    wm = class_key(e.get("StartupWMClass", "")) if e.get("StartupWMClass") else ""
+    for h in hs:
+        if h.get("cls") and class_key(h["cls"]) in (wm, prog):
+            return h["key"]
+    for h in hs:
+        if not h.get("cls") and h.get("bin") and h["bin"].lower() == prog:
+            return h["key"]
+    return ""
+
+
 # ---- commands ----
 def cmd_rows():
     es = entries()
     on = [x for x in es if enabled(x[1])]
     row("STARTS AT LOGIN", "%d of %d switched on" % (len(on), len(es)))
     row("FOLDER", FOLDER)
-    row("CLICK", "an app to switch it on / off")
+    row("CLICK", "an app to switch it on / off, its delay to change it")
     print("\t\t\t")
     if not es:
         row("NO STARTUP APPS", "type an app name below to add one")
+    hs = homes()
     for path, e in es:
         cmd = command(e)
         name = e.get("Name") or os.path.basename(path)[:-8]
@@ -154,10 +191,13 @@ def cmd_rows():
             state = "NOT FOR HYPRLAND"
         else:
             state = "ON" if enabled(e) else "OFF"
-            delay = e.get("X-GNOME-Autostart-Delay", "")
-            if enabled(e) and delay.isdigit() and int(delay) > 0:
-                state += "  +%ss" % delay
+            home = home_of(e, cmd, hs)
+            state += "  ·  " + ("window → " + home.replace("/", " / ") if home else "window: asked the first time")
         row(name, state, "", "python3 %s toggle %s" % (q(SELF), q(path)))
+        if enabled(e) and installed(cmd) and for_this_desktop(e):
+            d = delay_of(e)
+            row("   start after", ("%d s" % d if d else "at once") + "  (click to change)", "",
+                "python3 %s delay %s" % (q(SELF), q(path)))
 
 
 def cmd_toggle(path):
@@ -166,6 +206,15 @@ def cmd_toggle(path):
         sys.exit("not a startup entry: " + path)
     on = not enabled(read_entry(path))
     set_keys(path, {"Hidden": "false", "X-GNOME-Autostart-enabled": "true" if on else "false"})
+
+
+def cmd_delay(path):
+    path = os.path.abspath(path)
+    if os.path.dirname(path) != os.path.abspath(FOLDER) or not os.path.isfile(path):
+        sys.exit("not a startup entry: " + path)
+    cur = delay_of(read_entry(path))
+    nxt = next((d for d in DELAYS if d > cur), 0)
+    set_keys(path, {"X-GNOME-Autostart-Delay": str(nxt)})
 
 
 def app_dirs():
@@ -296,8 +345,7 @@ def cmd_run(now):
             if running(cmd):
                 log.write("  skip %s: already running\n" % name)
                 continue
-            delay = e.get("X-GNOME-Autostart-Delay", "")
-            delay = int(delay) if delay.isdigit() else (0 if now else DEFAULT_DELAY)
+            delay = 0 if now else delay_of(e)
             if e.get("Terminal", "").lower() == "true":
                 cmd = "kitty -e sh -c %s" % q(cmd)
             log.write("  start %s: %s\n" % (name, cmd))
@@ -314,6 +362,8 @@ def main(argv):
         cmd_rows()
     elif c == "toggle" and rest:
         cmd_toggle(rest[0])
+    elif c == "delay" and rest:
+        cmd_delay(rest[0])
     elif c == "add":
         cmd_add(" ".join(rest))
     elif c == "prune":

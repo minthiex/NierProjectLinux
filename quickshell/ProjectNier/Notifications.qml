@@ -1,4 +1,5 @@
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Services.Notifications
 import QtQuick
@@ -33,9 +34,60 @@ Scope {
         keepOnReload: false
 
         onNotification: note => {
-            if (root.dnd && note.urgency !== NotificationUrgency.Critical) return   // not tracked: dropped
+            var missed = root.dnd && note.urgency !== NotificationUrgency.Critical
+            root.remember(note, missed)
+            if (missed) return                    // not tracked: not shown (kept in the history, summed up after DND)
             note.tracked = true
         }
+    }
+
+    // ---- history (System → Notifications): the last 100 notices, also the ones do-not-disturb held back ----
+    // ~/.local/share/ProjectNier/notices.json, mode 600 (it holds message previews); scripts/notices.py shows / clears it
+    readonly property string historyPath: Quickshell.env("HOME") + "/.local/share/ProjectNier/notices.json"
+    property var history: []
+    property bool historyLoaded: false
+    FileView {
+        id: historyFile
+        path: root.historyPath
+        printErrors: false
+        watchChanges: true                       // "Clear History" rewrites it from outside
+        onFileChanged: reload()
+        onLoaded: {
+            try { var d = JSON.parse(text()); root.history = Array.isArray(d) ? d : [] } catch (e) { root.history = [] }
+            root.historyLoaded = true
+        }
+        onLoadFailed: root.historyLoaded = true  // no file yet
+    }
+    Timer { id: historySave; interval: 1500; onTriggered: { historyFile.setText(JSON.stringify(root.history)); historyMode.running = true } }
+    Process { id: historyMode; command: ["chmod", "600", root.historyPath] }
+    function plain(s) {
+        return String(s || "").replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"")
+                              .replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim()
+    }
+    function remember(note, missed) {
+        var h = history.concat([{ t: Date.now(), app: String(note.appName || ""), summary: plain(note.summary).substring(0, 120),
+                                  body: plain(note.body).substring(0, 240), missed: missed }])
+        history = h.slice(-100)
+        if (missed) {
+            var m = Object.assign({}, missedApps)
+            var a = String(note.appName || "Other")
+            m[a] = (m[a] || 0) + 1
+            missedApps = m
+        }
+        if (historyLoaded) historySave.restart()
+    }
+
+    // do-not-disturb ends: one notice sums up what it held back
+    property var missedApps: ({})                // app -> notices held back since DND went on
+    onDndChanged: {
+        if (dnd) { missedApps = ({}); return }
+        var held = missedApps, names = Object.keys(held), n = 0
+        names.forEach(k => n += held[k])
+        missedApps = ({})
+        if (n === 0) return
+        Quickshell.execDetached(["notify-send", "-a", "System", "-i", "preferences-system-notifications",
+            n + (n === 1 ? " notice" : " notices") + " while Do Not Disturb was on",
+            names.map(k => k + " " + held[k]).join("  ·  ") + ". System → Notifications lists them."])
     }
 
     function expireNote(n) { if (n) n.expire() }

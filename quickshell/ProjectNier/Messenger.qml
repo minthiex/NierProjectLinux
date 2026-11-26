@@ -1,4 +1,5 @@
 import Quickshell
+import Quickshell.Io
 import QtQuick
 
 // Facebook Messenger (through the local Matrix bridge) in the screen's style.
@@ -26,6 +27,14 @@ Item {
         for (var i = 0; i < all.length && out.length < 80; i++)
             if (q === "" || all[i].name.toLowerCase().indexOf(q) >= 0) out.push(all[i])
         return out
+    }
+
+    // the newest message of mine the other side has read (its read receipt is newer): marked SEEN
+    readonly property string seenId: {
+        var t = client.seenAt, ms = client.messages
+        if (!t) return ""
+        for (var i = ms.length - 1; i >= 0; i--) if (ms[i].mine && ms[i].ts <= t) return ms[i].id
+        return ""
     }
 
     readonly property int listW: 300
@@ -198,7 +207,10 @@ Item {
                 anchors.right: parent.right
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                text: client.sendError ? "NOT SENT" : client.status
+                text: client.sendError ? "NOT SENT"
+                    : client.uploading > 0 ? "SENDING FILE…"
+                    : client.typingNames.length > 0 ? client.typingNames.join(", ").toUpperCase() + " IS TYPING…"
+                    : client.status
                 color: client.connected && !client.sendError ? Theme.inkSoft : Theme.accent
                 font.family: Theme.font
                 font.pixelSize: Theme.smallFontSize
@@ -234,7 +246,8 @@ Item {
                 readonly property real maxW: width * 0.72
 
                 width: ListView.view.width
-                height: isMedia ? media.y + media.height : bubble.y + bubble.height
+                readonly property bool seen: d.mine && d.id === root.seenId
+                height: (isMedia ? media.y + media.height : bubble.y + bubble.height) + (seen ? seenMark.height + 3 : 0)
                 opacity: 0
 
                 NumberAnimation on opacity { to: 1; duration: Theme.hoverMs + 60; running: true }
@@ -300,6 +313,18 @@ Item {
                         font.italic: msg.d.kind === "notice"
                     }
                 }
+                Text {
+                    id: seenMark
+                    visible: msg.seen
+                    anchors.right: parent.right
+                    anchors.rightMargin: 4
+                    y: (msg.isMedia ? media.y + media.height : bubble.y + bubble.height) + 3
+                    text: "SEEN"
+                    color: Theme.inkSoft
+                    font.family: Theme.font
+                    font.pixelSize: Theme.smallFontSize
+                    font.letterSpacing: 2
+                }
             }
         }
 
@@ -322,9 +347,44 @@ Item {
             enabled: client.currentId !== ""
             opacity: enabled ? 1 : 0.45
 
+            // ATTACH: the desktop's file chooser (scripts/pick-file.py), then send the file into this chat
+            Item {
+                id: attachBtn
+                width: 34
+                height: parent.height
+                readonly property bool lit: attachHit.containsMouse || picker.running
+                Rectangle { anchors.fill: parent; color: attachBtn.lit ? Theme.ink : Theme.paperDark }
+                Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: attachBtn.lit ? Theme.paper : Theme.ink
+                    font.family: Theme.font
+                    font.pixelSize: Theme.fontSize + 4
+                }
+                MouseArea {
+                    id: attachHit
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: if (!picker.running) { picker.room = client.currentId; picker.running = true }
+                }
+                Process {
+                    id: picker
+                    property string room
+                    command: ["python3", "-I", Quickshell.shellPath("scripts/pick-file.py"), "Send a file to " + client.currentName]
+                    stdout: StdioCollector {
+                        onStreamFinished: {
+                            var path = text.trim()
+                            if (path !== "" && picker.room === client.currentId) client.sendFile(path)
+                        }
+                    }
+                }
+            }
+
             Rectangle {
                 id: inputBox
-                width: parent.width - sendBtn.width - 8
+                x: attachBtn.width + 6
+                width: parent.width - sendBtn.width - 8 - x
                 height: parent.height
                 color: "transparent"
                 border.width: 1
@@ -342,11 +402,12 @@ Item {
                     font.family: Theme.font
                     font.pixelSize: Theme.fontSize
                     clip: true
-                    onAccepted: { client.send(text); text = "" }
+                    onAccepted: { client.setTyping(false); client.send(text); text = "" }
+                    onTextChanged: client.setTyping(text.trim() !== "")
                     Text {
                         visible: input.text === "" && !input.activeFocus
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "Write a message, then Enter"
+                        text: "Write a message, then Enter  ·  drop files here"
                         color: Theme.inkSoft
                         font.family: Theme.font
                         font.pixelSize: Theme.fontSize
@@ -382,7 +443,47 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: { client.send(input.text); input.text = "" }
+                    onClicked: { client.setTyping(false); client.send(input.text); input.text = "" }
+                }
+            }
+        }
+    }
+
+    // files dragged from the file manager onto the open chat are sent into it (at most 10 at a time)
+    DropArea {
+        x: right.x
+        width: right.width
+        height: parent.height
+        enabled: client.currentId !== ""
+        onEntered: drag => drag.accepted = drag.hasUrls
+        onDropped: drop => {
+            if (!drop.hasUrls) return
+            var urls = drop.urls.slice(0, 10)
+            for (var i = 0; i < urls.length; i++) {
+                var u = String(urls[i])
+                if (u.indexOf("file://") === 0) client.sendFile(decodeURIComponent(u.substring(7)))
+            }
+            drop.acceptProposedAction()
+        }
+        Rectangle {
+            anchors.fill: parent
+            visible: parent.containsDrag
+            color: "transparent"
+            border.width: 2
+            border.color: Theme.ink
+            Rectangle {
+                anchors.centerIn: parent
+                width: dropText.implicitWidth + 30
+                height: 34
+                color: Theme.ink
+                Text {
+                    id: dropText
+                    anchors.centerIn: parent
+                    text: "DROP TO SEND"
+                    color: Theme.paper
+                    font.family: Theme.font
+                    font.pixelSize: Theme.fontSize
+                    font.letterSpacing: 2
                 }
             }
         }

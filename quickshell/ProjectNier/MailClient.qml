@@ -36,9 +36,10 @@ Item {
     onViewingChanged: if (viewing && configured) refresh()
 
     // ---- running the helper --------------------------------------------------------------------
-    function run(args, payload, cb) {
+    function run(args, payload, cb, account) {
         var env = ({})
-        if (address !== "") env.MAIL_ACCOUNT = address
+        if (account) env.MAIL_ACCOUNT = account
+        else if (address !== "") env.MAIL_ACCOUNT = address
         if (payload !== undefined) env.MAIL_PAYLOAD = JSON.stringify(payload)
         var p = job.createObject(root, {
             cb: cb,
@@ -190,6 +191,24 @@ Item {
                 break
             }
         }
+    }
+
+    // ---- from a new-mail notice (any account, the window need not be open) ----------------------------
+    // what: "seen" (MARK READ) or "trash" (DELETE: to the account's trash)
+    function noticeAction(account, uid, what) {
+        run([what, uid], undefined, function (d) {
+            if (!d || d.error) {
+                Quickshell.execDetached(["notify-send", "-a", "Email", "-u", "critical", "Email",
+                                         (what === "trash" ? "Could not delete the message: " : "Could not mark it read: ") + (d && d.error ? d.error : "no answer")])
+                return
+            }
+            if (account === address && (what === "trash" || mails.some(m => m.uid === uid))) {
+                if (what === "trash") mails = mails.filter(m => m.uid !== uid)
+                else mails = mails.map(m => m.uid === uid ? Object.assign({}, m, { seen: true }) : m)
+                if (currentUid === uid && what === "trash") { currentUid = ""; detail = null }
+            }
+            check()                               // unread counts and the badge
+        }, account)
     }
 
     // ---- writing ------------------------------------------------------------------------------------

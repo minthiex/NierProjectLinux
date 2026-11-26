@@ -153,7 +153,7 @@ Item {
             room: {
                 timeline: { limit: 1, types: ["m.room.message", "m.sticker"] },
                 state: { types: ["m.room.name", "m.room.canonical_alias"], lazy_load_members: true },
-                ephemeral: { types: [] }, account_data: { types: [] }
+                ephemeral: { types: ["m.receipt"] }, account_data: { types: [] }
             },
             presence: { types: [] }, account_data: { types: [] }
         }
@@ -179,6 +179,7 @@ Item {
                 room.server = r.unread_notifications ? r.unread_notifications.notification_count : 0
                 room.unread = room.server
                 byId[id] = room
+                takeEphemeral(id, r)
             }
             rebuild()
             lastOk = Date.now()
@@ -191,7 +192,7 @@ Item {
     function poll(gen) {
         if (!running || gen !== loopGen) return
         var filter = { room: { timeline: { limit: 20, types: ["m.room.message", "m.sticker"] }, state: { types: [] },
-                               ephemeral: { types: [] }, account_data: { types: [] } },
+                               ephemeral: { types: ["m.typing", "m.receipt"] }, account_data: { types: [] } },
                        presence: { types: [] }, account_data: { types: [] } }
         call("GET", "/sync?timeout=25000&since=" + encodeURIComponent(since) + "&filter=" + encodeURIComponent(JSON.stringify(filter)), undefined, function (st, d) {
             if (!running || gen !== loopGen) return
@@ -211,6 +212,11 @@ Item {
             var changed = false
             for (var id in join) {
                 var r = join[id]
+                takeEphemeral(id, r)
+                // only typing / receipts and the same unread count: nothing in the chat list changed
+                var hasTl = r.timeline && r.timeline.events && r.timeline.events.length > 0
+                var cnt = r.unread_notifications ? r.unread_notifications.notification_count : undefined
+                if (!hasTl && byId[id] && (cnt === undefined || cnt === byId[id].server)) continue
                 var room = byId[id]
                 if (!room) { room = { id: id, name: id, last: "", ts: 0, unread: 0, server: 0, local: 0 }; byId[id] = room }
                 var tl = r.timeline && r.timeline.events ? r.timeline.events : []
@@ -474,4 +480,70 @@ Item {
         })
     }
     signal sendFailed(string roomId, string text)
+
+    // ---- typing and read receipts (shown for the open chat) ----------------------------------------
+    property var typingIn: ({})              // room id -> [user ids typing, not me]
+    property var readBy: ({})                // room id -> newest time (ms) someone else read the chat
+    readonly property var typingNames: (typingIn[currentId] || []).map(u => nameOf(currentId, u))
+    readonly property double seenAt: readBy[currentId] || 0
+    function takeEphemeral(roomId, r) {
+        var evs = r.ephemeral && r.ephemeral.events ? r.ephemeral.events : []
+        for (var i = 0; i < evs.length; i++) {
+            var e = evs[i]
+            if (e.type === "m.typing") {
+                var t = Object.assign({}, typingIn)
+                t[roomId] = (e.content.user_ids || []).filter(u => u !== me)
+                typingIn = t
+            } else if (e.type === "m.receipt") {
+                var best = readBy[roomId] || 0
+                for (var ev in e.content) {
+                    var reads = e.content[ev]["m.read"] || {}
+                    for (var u in reads) if (u !== me && reads[u].ts > best) best = reads[u].ts
+                }
+                if (best !== (readBy[roomId] || 0)) { var b = Object.assign({}, readBy); b[roomId] = best; readBy = b }
+            }
+        }
+    }
+    // tell the chat you are typing (the bridge shows it on Facebook); at most every 4 s, off when sent / emptied
+    property double typingSent: 0
+    function setTyping(on) {
+        if (currentId === "" || !connected) return
+        var now = Date.now()
+        if (on && now - typingSent < 4000) return
+        if (!on && typingSent === 0) return
+        typingSent = on ? now : 0
+        call("PUT", "/rooms/" + encodeURIComponent(currentId) + "/typing/" + encodeURIComponent(me),
+             on ? { typing: true, timeout: 6000 } : { typing: false }, null)
+    }
+
+    // ---- sending a file (Messenger → ATTACH, or a file dropped on the chat): scripts/messenger-send-file.py ----
+    property int uploading: 0
+    function sendFile(path) {
+        if (currentId === "" || String(path) === "") return
+        uploading++
+        var p = uploadComp.createObject(root, { room: currentId, file: String(path),
+            command: ["python3", "-I", Quickshell.shellPath("scripts/messenger-send-file.py"), currentId, String(path)] })
+        p.running = true
+    }
+    Component {
+        id: uploadComp
+        Process {
+            id: up
+            property string room
+            property string file
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    root.uploading = Math.max(0, root.uploading - 1)
+                    var d = null
+                    try { d = JSON.parse(text) } catch (e) {}
+                    if (!d || !d.ok) {
+                        root.sendError = true
+                        Quickshell.execDetached(["notify-send", "-a", "Messenger", "-u", "critical", "File not sent",
+                            up.file.replace(/^.*\//, "") + ": " + (d && d.error ? d.error : "no answer")])
+                    }
+                    up.destroy(100)
+                }
+            }
+        }
+    }
 }
