@@ -80,6 +80,14 @@ Item {
         target: "switcher"
         function next(): void { root.cycleApp(1) }
         function prev(): void { root.cycleApp(-1) }
+        function nextWindow(): void { root.stepWin(1) }
+        function prevWindow(): void { root.stepWin(-1) }
+        // the app windows placed in content windows, one per line: address, sub-function, class (* = the one shown)
+        function windows(): string {
+            return root.extWins.map(w => (root.isPopped(w.addr) ? "^ " : w.addr === root.frontFor(w.slug)
+                                          || (root.frontFor(w.slug) === "" && root.extWins.filter(x => x.slug === w.slug && !root.isPopped(x.addr)).pop() === w) ? "* " : "  ")
+                                         + w.addr + "  " + w.slug + "  " + w.cls).join("\n")
+        }
     }
     function specOf(key) {
         if (key === superHome)
@@ -301,7 +309,9 @@ Item {
         else if (app === "email" && curSlug !== "") emailSlug = curSlug
         else if (app === "bluetooth" && curSlug !== "") bluetoothSlug = curSlug
     }
-    readonly property string appName: messengerOpen ? "Messenger" : emailOpen ? "Email" : bluetoothOpen ? "Bluetooth" : appNames[curSlug] ? appNames[curSlug] : (liveNames[curSlug] ? liveNames[curSlug] : (extFor(curSlug) ? pretty(extFor(curSlug).cls) : "Terminal"))
+    readonly property string appName: messengerOpen ? "Messenger" : emailOpen ? "Email" : bluetoothOpen ? "Bluetooth"
+        : curWins.length > 1 && curFrontIdx >= 0 ? pretty(curWins[curFrontIdx].cls)      // several windows: the one shown
+        : appNames[curSlug] ? appNames[curSlug] : (liveNames[curSlug] ? liveNames[curSlug] : (extFor(curSlug) ? pretty(extFor(curSlug).cls) : "Terminal"))
 
     // One hyprctl call does everything for a switch (hide the others, show + place this one),
     // and the frame is drawn when that call has finished, so frame and window appear together.
@@ -324,6 +334,28 @@ Item {
     // started, is a system dialog, belongs to a registered or just-launched app. Anything else is
     // closed at once and the user is asked which menu and sub-function it belongs to.
     property var extWins: []            // [{ addr, slug, cls }] application windows placed in the content frame
+    // ---- window picker: a sub-function holding several app windows shows one; the frame's ‹ › choose which ----
+    property var frontWin: ({})         // slug -> address picked with the picker (default: the newest window)
+    function isPopped(addr) { return pop.popped.some(p => p.addr === addr) }
+    // the window picked for a sub-function's frame, if it is still there and not popped out ("" = the newest one)
+    function frontFor(slug) {
+        var f = frontWin[slug]
+        return f && !isPopped(f) && extWins.some(w => w.slug === slug && w.addr === f) ? f : ""
+    }
+    function bringFront(slug, addr) { var f = Object.assign({}, frontWin); f[slug] = addr; frontWin = f }
+    // the current sub-function's windows the frame can show (popped-out ones float on their own), oldest first
+    readonly property var curWins: extWins.filter(w => w.slug === curSlug && !pop.popped.some(p => p.addr === w.addr))
+    readonly property string curFront: frontWin[curSlug] && curWins.some(w => w.addr === frontWin[curSlug]) ? frontWin[curSlug]
+                                       : (curWins.length > 0 ? curWins[curWins.length - 1].addr : "")
+    readonly property int curFrontIdx: curWins.findIndex(w => w.addr === curFront)
+    function stepWin(delta) {
+        var n = curWins.length
+        if (n < 2 || pop.popCur) return
+        var i = (curFrontIdx + delta + n) % n
+        bringFront(curSlug, curWins[i].addr)
+        focusUntil = Date.now() + 8000
+        syncTerm()
+    }
     property var known: ({})            // addresses that existed when the shell started
     property var claimedCls: ({})       // window class -> slug it belongs to
     // one claim per launch still waiting for its window, oldest first: fast clicks in several places (or several
@@ -561,14 +593,17 @@ Item {
         var place = function () {
             if (own !== true) { var cc = Object.assign({}, claimedCls); cc[cls] = slug; claimedCls = cc }
             extWins = extWins.concat([{ addr: addr, slug: slug, cls: cls }])
+            if (frontWin[slug] !== undefined) { var fw = Object.assign({}, frontWin); delete fw[slug]; frontWin = fw }   // a new window comes to the front
             syncTerm()
             if (!byClick) gotoSlug(slug)                // opened by a shortcut: take the user to its page
         }
         // the sub-function already holds another app: hide the new window and ask first, replace after the answer
-        if (occupied(slug) && pretty(cls) !== nameOfSlug(slug)) {
+        var joins = keepBoth !== null && keepBoth.slug === slug && keepBoth.until > Date.now()
+        if (joins) keepBoth = null
+        if (!joins && occupied(slug) && pretty(cls) !== nameOfSlug(slug)) {
             if (replaceAsk) { Quickshell.execDetached(["bash", Panes.script("close-ext.sh"), addr]); return }
             Quickshell.execDetached(["hyprctl", "--batch", 'dispatch hl.dsp.window.move({ workspace = "special:projectnierterm", follow = false, window = "address:0x' + addr + '" })'])
-            replaceAsk = { name: pretty(cls), old: nameOfSlug(slug), slug: slug, go: place, cancel: addr }
+            replaceAsk = { name: pretty(cls), old: nameOfSlug(slug), slug: slug, go: place, cancel: addr, both: canShare(slug) }
             gotoSlug(slug)
             return
         }
@@ -718,6 +753,26 @@ Item {
     // normal workspace (it opened while the shell was reloading): if it belongs to a sub-function it is put back in
     // the frame. One that belongs to none is not touched (routing it would close it).
     property var strays: []
+    // which app window lives in which content window survives a live reload (saving a file): windows shown in a frame
+    // float, so the stray check below would not find them again
+    PersistentProperties {
+        id: keepWins
+        reloadableId: "projectnierWins"
+        // JSON text: a JS value cannot pass from the old QML engine to the new one (live reload)
+        property string wins: "[]"
+        property string front: "{}"
+        property string claimed: "{}"
+        onLoaded: {
+            var w = JSON.parse(wins)
+            if (w.length === 0) return
+            root.extWins = w
+            root.frontWin = JSON.parse(front)
+            root.claimedCls = Object.assign({}, JSON.parse(claimed), root.claimedCls)
+        }
+    }
+    onExtWinsChanged: keepWins.wins = JSON.stringify(extWins)
+    onFrontWinChanged: keepWins.front = JSON.stringify(frontWin)
+    onClaimedClsChanged: keepWins.claimed = JSON.stringify(claimedCls)
     Process {
         running: true
         command: ["sh", "-c", "hyprctl clients -j | jq -r '.[] | \"\\(.address)\\t\\(.class)\\t\\(.floating)\\t\\(.fullscreen)\\t\\(.workspace.name)\\t\\(.pinned)\"'"]
@@ -734,7 +789,10 @@ Item {
                         s.push({ addr: a, cls: f[1], pinned: f[5] === "true" })
                 })
                 root.known = k
+                root.extWins = root.extWins.filter(w => k[w.addr])          // kept over a reload: drop windows closed meanwhile
+                s = s.filter(w => !root.extWins.some(x => x.addr === w.addr))
                 root.strays = s
+                if (root.extWins.length > 0) root.syncTerm()
                 if (s.length > 0) strayTimer.start()
             }
         }
@@ -776,16 +834,19 @@ Item {
         var showSel = ""
         var curPopped = false
         var wins = termSlugs.filter(s => s.indexOf("popup") !== 0).map(s => ({ slug: s, sel: sel(s) }))
-                   .concat(extWins.map(w => ({ slug: w.slug, sel: 'window = "address:0x' + w.addr + '"', ext: true })))
+                   .concat(extWins.map(w => ({ slug: w.slug, addr: w.addr, sel: 'window = "address:0x' + w.addr + '"', ext: true })))
         var popSel = {}
         pop.popped.forEach(p => { popSel[p.term ? sel(p.slug) : p.sel] = true })
         for (var i = 0; i < wins.length; i++) {
             var s = wins[i].slug, sl = wins[i].sel
             // a popped-out window floats on its own: never placed or hidden, its content window just says where it is
             if (popSel[sl] && pop.poppedFor(s) !== null) { if (s === cur) curPopped = true; continue }
-            // several app windows in one sub-function (e.g. two browsers): only the newest is shown
+            // several app windows in one sub-function (e.g. two browsers): only one is shown, the one picked with
+            // the frame's ‹ › or else the newest
             var buried = false
-            if (wins[i].ext) for (var j = i + 1; j < wins.length; j++) if (wins[j].ext && wins[j].slug === s) buried = true
+            var front = wins[i].ext ? frontFor(s) : ""
+            if (front !== "") buried = wins[i].addr !== front
+            else if (wins[i].ext) for (var j = i + 1; j < wins.length; j++) if (wins[j].ext && wins[j].slug === s && !popSel[wins[j].sel]) buried = true
             if (s === cur && !buried) {
                 var ws = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
                 var b = frameBox()
@@ -919,6 +980,14 @@ Item {
         if (messengerOpen) { messengerSlug = ""; maximized = false; return }     // stops the messenger's connection
         if (emailOpen) { emailSlug = ""; maximized = false; return }
         if (bluetoothOpen) { bluetoothSlug = ""; maximized = false; return }
+        // several windows here: close only the one on screen, the next one takes its place
+        if (curWins.length > 1 && !pop.popCur) {
+            var a = curFront
+            Quickshell.execDetached(["bash", Panes.script("close-ext.sh"), a])
+            extWins = extWins.filter(w => w.addr !== a)
+            syncTerm()
+            return
+        }
         guardClose(s, () => closeTermNow(s))
     }
     function closeTermNow(s) {
@@ -943,9 +1012,13 @@ Item {
 
     // ---- one app per sub-function: ask before replacing the one that is open --------------------------
     property var replaceAsk: null       // { name: new app, old: name of the open one, slug, go }
+    // KEEP BOTH: the new app's window joins the open one (the frame's ‹ › switch between them); only app windows can
+    // share a frame, not a terminal or a built-in app
+    function canShare(slug) { return extFor(slug) !== null && termSlugs.indexOf(slug) < 0 && messengerSlug !== slug && emailSlug !== slug && bluetoothSlug !== slug }
+    property var keepBoth: null         // { slug, until }: the window of an app started with KEEP BOTH joins without asking
     function occupied(slug) { return slug !== "" && (termSlugs.indexOf(slug) >= 0 || extFor(slug) !== null || messengerSlug === slug || emailSlug === slug || bluetoothSlug === slug) }
     // what: a command array or the name of a built-in app; go() does the opening
-    function gated(what, go) {
+    function gated(what, go, app) {
         // a plain terminal while this sub-function already has its terminal: just bring that one forward
         if (typeof what !== "string" && what.length === 0 && termSlugs.indexOf(curSlug) >= 0) {
             focusUntil = Date.now() + 8000
@@ -954,7 +1027,7 @@ Item {
         }
         var name = typeof what === "string" ? pretty(what) : appLabel(what)
         if (occupied(curSlug) && !replaceAsk) {   // also when it is the same app: ask before replacing it
-            replaceAsk = { name: name, old: appName, slug: curSlug, go: go }
+            replaceAsk = { name: name, old: appName, slug: curSlug, go: go, both: app === true && canShare(curSlug) }
             return
         }
         go()
@@ -975,6 +1048,13 @@ Item {
         closer.go = a.go
         closer.command = ["bash", Panes.script("close-term.sh"), a.slug]
         closer.running = true
+    }
+    function replaceKeepBoth() {
+        var a = replaceAsk
+        replaceAsk = null
+        if (!a) return
+        if (!a.cancel) keepBoth = { slug: a.slug, until: Date.now() + 20000 }   // not started yet: its window joins when it opens
+        a.go()
     }
     function replaceCancel() {
         var a = replaceAsk
@@ -1081,6 +1161,7 @@ Item {
             } else if (event.name === "closewindow" || event.name === "windowtitlev2") {
                 if (event.name === "closewindow") {
                     pop.forgetPopped(d)
+                    for (var fs in root.frontWin) if (root.frontWin[fs] === d) { var fw = Object.assign({}, root.frontWin); delete fw[fs]; root.frontWin = fw; break }
                     // Hyprland reuses window addresses: a later window at this address must be routed again
                     if (root.known[d]) { var k = Object.assign({}, root.known); delete k[d]; root.known = k }
                     var gone = root.extWins.filter(w => w.addr === d)
@@ -1427,7 +1508,7 @@ Item {
         onOpenFm: cmd => root.openFileManager(cmd)
         onOpenViewer: cmd => root.openViewer(cmd)
         onLaunching: root.claimNext()
-        onGate: (what, go) => root.gated(what, go)
+        onGate: (what, go, app) => root.gated(what, go, app)
         onRestoreSub: key => Registry.restore(key)
         onRemoveSub: key => Registry.removeSub(key)
         onHideSub: { Registry.hide(root.pane); root.selectFirst() }
@@ -1464,6 +1545,7 @@ Item {
             color: Theme.ink
 
             Text {
+                id: headName
                 x: 12
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.appName
@@ -1474,12 +1556,54 @@ Item {
                 font.letterSpacing: 1
             }
 
+            // window picker: ‹ 2/3 › and the shown window's title, when this sub-function holds several windows
+            Row {
+                id: picker
+                visible: root.curWins.length > 1 && !pop.popCur
+                anchors.left: headName.right
+                anchors.leftMargin: 14
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 6
+                HeadButton {
+                    id: prevWinBtn
+                    width: 28
+                    glyph: "\uf053"
+                    tip: "Previous window"
+                    onClicked: root.stepWin(-1)
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: (root.curFrontIdx + 1) + "/" + root.curWins.length
+                    color: Theme.paper
+                    font.family: Theme.font
+                    font.pixelSize: Theme.fontSize - 1
+                    font.bold: true
+                }
+                HeadButton {
+                    id: nextWinBtn
+                    width: 28
+                    glyph: "\uf054"
+                    tip: "Next window"
+                    onClicked: root.stepWin(1)
+                }
+                Text {
+                    readonly property var tl: picker.visible ? pop.toplevelOf(String(root.curFront).toLowerCase()) : null
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(0, Math.min(implicitWidth, buttons.x - picker.x - 3 * 34 - 260))
+                    elide: Text.ElideRight
+                    text: tl ? String(tl.title) : ""
+                    color: Theme.paperDark
+                    font.family: Theme.font
+                    font.pixelSize: Theme.fontSize - 2
+                }
+            }
+
             // right: pop out | full screen   close (the tooltip of the hovered one shows left of them)
             HeadTip {
                 anchors.right: buttons.left
                 anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
-                text: popBtn.active ? popBtn.tip : fsBtn.active ? fsBtn.tip : closeBtn.active ? closeBtn.tip : ""
+                text: prevWinBtn.active ? prevWinBtn.tip : nextWinBtn.active ? nextWinBtn.tip : popBtn.active ? popBtn.tip : fsBtn.active ? fsBtn.tip : closeBtn.active ? closeBtn.tip : ""
             }
             Row {
                 id: buttons
@@ -1507,7 +1631,7 @@ Item {
                     id: closeBtn
                     glyph: "\uf00d"
                     danger: true
-                    tip: "Close " + root.appName
+                    tip: root.curWins.length > 1 ? "Close this window (" + (root.curFrontIdx + 1) + "/" + root.curWins.length + ")" : "Close " + root.appName
                     onClicked: root.closeTerm()
                 }
             }
@@ -1583,6 +1707,7 @@ Item {
         ask: root.replaceAsk
         onAccepted: root.replaceAccept()
         onCancelled: root.replaceCancel()
+        onKeptBoth: root.replaceKeepBoth()
     }
 
     // asks where a blocked application belongs (centre of the screen, above everything)

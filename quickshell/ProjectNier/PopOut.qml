@@ -20,7 +20,9 @@ Scope {
         for (var i = 0; i < popped.length; i++) if (popped[i].slug === slug) return popped[i]
         return null
     }
-    readonly property bool popCur: view.curSlug !== "" && poppedFor(view.curSlug) !== null
+    // the current sub-function's window is popped out and nothing is left in its frame (with several app windows the
+    // frame goes on showing the others: the picker switches between them)
+    readonly property bool popCur: view.curSlug !== "" && poppedFor(view.curSlug) !== null && view.curWins.length === 0
     // only real app / terminal windows can float on their own (the built-in apps are drawn by the shell)
     readonly property bool canPop: view.termOpen && !view.messengerOpen && !view.emailOpen && !view.bluetoothOpen && !popCur
 
@@ -29,7 +31,7 @@ Scope {
         if (!canPop) return
         var addr = "", term = false
         var ext = view.extWins.filter(w => w.slug === s)
-        if (ext.length > 0) addr = ext[ext.length - 1].addr          // the shown one is the newest
+        if (ext.length > 0) addr = view.curFront                     // the one shown (picked with the frame's ‹ ›, or the newest)
         else {
             var h = Hyprland.toplevels.values
             for (var i = 0; i < h.length; i++)
@@ -55,6 +57,7 @@ Scope {
             'dispatch hl.dsp.window.resize({ ' + sl + ', x = ' + g.w + ', y = ' + g.h + ' })',
             'dispatch hl.dsp.window.move({ ' + sl + ', x = ' + g.x + ', y = ' + g.y + ' })',
             'dispatch hl.dsp.focus({ ' + sl + ' })']).join(" ; ")])
+        if (!term) view.syncTerm()          // another window of this sub-function takes the frame (picker)
     }
     // a window that belongs to no content window (a second video opened while one is playing): popped out at once,
     // closing its pop-up closes the window itself
@@ -94,6 +97,7 @@ Scope {
         var mv = Object.assign({}, popMoving); delete mv[addr]; popMoving = mv
         unpinNext = unpinNext.concat([p[0].sel])
         if (p[0].slug === view.curSlug) view.focusUntil = Date.now() + 8000
+        if (!p[0].term && p[0].slug !== "") view.bringFront(p[0].slug, addr)   // back in its frame: shown in front of the others
         view.syncTerm()
     }
     function forgetPopped(addr) {

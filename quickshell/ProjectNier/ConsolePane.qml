@@ -25,7 +25,8 @@ Item {
     signal openViewer(var cmd)               // an image was clicked: show it in the image viewer
     signal openFm(var cmd)                   // an action wants the file manager: go to the File Manager sub-function
     signal launching()                       // something is about to start an application window
-    signal gate(var what, var go)         // an app wants the content window: the screen may ask first, then calls go()
+    signal gate(var what, var go, bool app)   // an app wants the content window: the screen may ask first, then calls go()
+                                          // (app: a window of its own, which may share the frame with the open one)
 
     // clicking the result itself refreshes it (rows with their own click command, buttons and the text field keep theirs)
     MouseArea {
@@ -41,7 +42,7 @@ Item {
         var wait = delay !== undefined ? delay : (spec.delay !== undefined ? spec.delay : 700)
         // anything that starts the file manager shows the File Manager sub-function (Dolphin opens there, at the path)
         if (!term && cmd.length > 0 && cmd[0] === "dolphin") { root.openFm(cmd); return }
-        if (!term && launch === true) { root.gate(cmd, () => root.run(cmd, false, quiet, false)); return }
+        if (!term && launch === true) { root.gate(cmd, () => root.run(cmd, false, quiet, false), true); return }
         if (!term && wait === 0) {
             // no delay: wait for the command itself to finish, then refresh straight away
             runner.running = false
@@ -49,7 +50,7 @@ Item {
             runner.running = true
             return
         }
-        if (term) { root.gate(cmd, () => root.openTerm(root.name, cmd)); return }
+        if (term) { root.gate(cmd, () => root.openTerm(root.name, cmd), false); return }
         if (!quiet) root.launching()      // a window it opens belongs to this sub-function (quiet commands open none)
         Quickshell.execDetached(cmd)
         if (quiet || spec.script) { later.interval = Math.max(1, wait); later.restart() }
@@ -457,7 +458,7 @@ Item {
                         }
                         btn.armed = false
                         if (btn.modelData.restoreKey !== undefined) { root.restoreSub(btn.modelData.restoreKey); return }
-                        if (btn.modelData.app) { root.gate(btn.modelData.app, () => root.openApp(btn.modelData.app)); return }
+                        if (btn.modelData.app) { root.gate(btn.modelData.app, () => root.openApp(btn.modelData.app), false); return }
                         if (btn.modelData.fm === true) { root.openFm(btn.modelData.cmd); return }
                         root.run(btn.modelData.cmd, btn.modelData.term === true, btn.modelData.quiet === true, btn.modelData.launch === true, btn.modelData.delay)
                     }

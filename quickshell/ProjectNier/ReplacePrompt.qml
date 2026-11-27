@@ -7,8 +7,9 @@ import QtQuick
 PanelWindow {
     id: win
 
-    property var ask: null                 // { name, old } or null
+    property var ask: null                 // { name, old, both } or null   both: KEEP BOTH is offered
     signal accepted()
+    signal keptBoth()
     signal cancelled()
 
     visible: ask !== null
@@ -68,6 +69,7 @@ PanelWindow {
                 width: parent.width
                 wrapMode: Text.Wrap
                 text: "Close it and replace it with " + (win.ask ? win.ask.name : "") + "?"
+                      + (win.ask && win.ask.both ? " Or keep both: the window's title bar then switches between them." : "")
                 color: Theme.inkSoft
                 font.family: Theme.font
                 font.pixelSize: Theme.fontSize
@@ -75,6 +77,7 @@ PanelWindow {
             Row {
                 spacing: 10
                 ChipButton { text: "CLOSE AND REPLACE"; onClicked: win.accepted() }
+                ChipButton { text: "KEEP BOTH"; visible: win.ask !== null && win.ask.both === true; onClicked: win.keptBoth() }
                 ChipButton { text: "KEEP CURRENT"; onClicked: win.cancelled() }
             }
         }

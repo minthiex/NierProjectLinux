@@ -16,6 +16,7 @@ Scope {
     function lockNow() {
         if (session.locked) return
         status = "ready"
+        persist.wasLocked = true
         session.locked = true
     }
 
@@ -29,6 +30,7 @@ Scope {
         onLoaded: {
             var boot = !booted && Quickshell.env("PROJECTNIER_LOCK") === "1"
             booted = true
+            if (wasLocked) console.info("Lock: the screen was locked before the reload, locking again")
             if (boot || wasLocked) root.lockNow()
         }
     }
@@ -58,6 +60,13 @@ Scope {
         }
     }
 
+    // wasLocked decides whether a live reload locks again, so it must never go stale: lockedChanged alone was missed
+    // (an unlocked screen got locked again by the next reload). Read the real state every second as well.
+    Timer {
+        interval: 1000; running: true; repeat: true
+        onTriggered: if (persist.wasLocked !== session.locked) persist.wasLocked = session.locked
+    }
+
     WlSessionLock {
         id: session
         locked: false
@@ -78,7 +87,7 @@ Scope {
                 onTouched: if (root.status === "failed") root.status = "ready"
                 onRestartRequested: Quickshell.execDetached(["systemctl", "reboot"])
                 onShutdownRequested: Quickshell.execDetached(["systemctl", "poweroff"])
-                onFinished: session.locked = false
+                onFinished: { persist.wasLocked = false; session.locked = false }
             }
         }
     }
