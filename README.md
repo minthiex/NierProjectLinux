@@ -1,3 +1,7 @@
+
+
+
+
 # ProjectNier
 
 A full-screen desktop shell for Hyprland in the style of the menu screens of *NieR: Automata*, built with plain
@@ -10,6 +14,13 @@ Bluetooth manager, a notification daemon with reply buttons and a history (also 
 a lock screen, Quick Settings, a health light that repairs what it can by itself, clipboard history, screenshots,
 daily backups of the settings outside this repo, and a search box that finds apps, sub-functions and menus, does
 sums and unit conversions (`2+3*4`, `10 km to mi`, `= any qalc expression`) and runs commands (`> command`).
+
+## Showcase
+
+https://github.com/user-attachments/assets/8697ddd8-6b04-42b2-88c5-17e28da5df91
+
+A 3-minute tour: the tabs and sub-functions, the search box, a terminal inside the screen, workspaces and the
+Configuration pages. The music is an original synthesized pad, not from the game.
 
 ## Requirements
 
