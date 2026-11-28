@@ -89,6 +89,24 @@ accounts), the bridge's data (`~/.local/share/projectnier/messenger-bridge/synap
 System → Backups copies the app list, `local.lua`, `hyprland-gui.lua`, `idle.json` and `~/.config/autostart` to
 `~/backups/auto/` once a day (the newest 14; never logins).
 
+## Uninstall
+
+```sh
+cd ~/dotfiles
+./install.sh --uninstall --dry-run     # shows what it would do
+./install.sh --uninstall
+```
+
+It stops the shell, removes the two links (only if they still point into this repo), removes `hyprland.lua` if it
+is still the one the installer made (or puts your earlier `hyprland.lua.pre-projectnier-<time>` back, keeping the
+current one as `hyprland.lua.projectnier-removed-<time>`), restores any other `.pre-projectnier-*` file it moved
+aside, and removes the copied bridge recipe files.
+
+It never deletes your data: `local.lua`, the Messenger and mail logins, `~/.local/share/ProjectNier/`, the bridge's
+`synapse/` and `meta/` folders, `~/backups` and this repo stay. The bridge's Docker containers are not touched; stop
+and remove them with `docker compose -p bridge down` (add `-v` to drop their volumes). A `hyprland.lua` you edited
+yourself with no earlier one to restore is kept; remove its `require("projectnier")` line by hand.
+
 ## Updating
 
 `git pull` in `~/dotfiles`. The shell reloads by itself; for Hyprland run `hyprctl reload`.
